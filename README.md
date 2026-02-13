@@ -6,11 +6,11 @@
 
 ## 🎯 Bounty Coverage
 
-| Track | Prize | Status |
-|-------|-------|--------|
-| **Agent+Token** | $10K per winner (10 winners) + $40K liquidity boost | ✅ $CULT token on nad.fun + autonomous agents |
-| **Religious Persuasion Agent** | $10K | ✅ AI prophets generating market predictions & converting followers |
-| **Gaming Arena Agent** | $10K | ✅ Raid mechanics with treasury wagering & leaderboards |
+| Track                          | Prize                                               | Status                                                              |
+| ------------------------------ | --------------------------------------------------- | ------------------------------------------------------------------- |
+| **Agent+Token**                | $10K per winner (10 winners) + $40K liquidity boost | ✅ $CULT token on nad.fun + autonomous agents                       |
+| **Religious Persuasion Agent** | $10K                                                | ✅ AI prophets generating market predictions & converting followers |
+| **Gaming Arena Agent**         | $10K                                                | ✅ Raid mechanics with treasury wagering & leaderboards             |
 
 ## 🏗️ Architecture
 
@@ -49,11 +49,11 @@ Each cult agent runs an autonomous 30-60 second loop:
 
 ### Three Pre-built Cults
 
-| Cult | Personality | Strategy |
-|------|-------------|----------|
-| 🕯️ Church of the Eternal Candle | Mystical market prophet | Bold predictions, high-confidence prophecies |
-| 🔴 Order of the Red Dildo | Aggressive degen evangelist | Frequent raids, hostile takeovers |
-| 💎 Temple of Diamond Hands | Stoic hodl philosopher | Conservative treasury, strategic raids |
+| Cult                            | Personality                 | Strategy                                     |
+| ------------------------------- | --------------------------- | -------------------------------------------- |
+| 🕯️ Church of the Eternal Candle | Mystical market prophet     | Bold predictions, high-confidence prophecies |
+| 🔴 Order of the Red Dildo       | Aggressive degen evangelist | Frequent raids, hostile takeovers            |
+| 💎 Temple of Diamond Hands      | Stoic hodl philosopher      | Conservative treasury, strategic raids       |
 
 ## 📦 Tech Stack
 
@@ -120,29 +120,29 @@ npm run dev
 
 Single contract handling all on-chain state:
 
-| Function | Description |
-|----------|-------------|
-| `registerCult(name, prompt, token)` | Register a new cult with initial treasury |
-| `depositToTreasury(cultId)` | Add MON to cult treasury |
-| `joinCult(cultId)` | Increment follower count |
-| `recordRaid(attacker, defender, won, amount)` | Record raid result + transfer treasury |
-| `createProphecy(cultId, prediction, target)` | Record a market prophecy |
-| `resolveProphecy(id, correct, multiplier)` | Resolve prophecy with treasury effects |
+| Function                                      | Description                               |
+| --------------------------------------------- | ----------------------------------------- |
+| `registerCult(name, prompt, token)`           | Register a new cult with initial treasury |
+| `depositToTreasury(cultId)`                   | Add MON to cult treasury                  |
+| `joinCult(cultId)`                            | Increment follower count                  |
+| `recordRaid(attacker, defender, won, amount)` | Record raid result + transfer treasury    |
+| `createProphecy(cultId, prediction, target)`  | Record a market prophecy                  |
+| `resolveProphecy(id, correct, multiplier)`    | Resolve prophecy with treasury effects    |
 
 **Events**: `CultRegistered`, `TreasuryUpdated`, `FollowerJoined`, `RaidResult`, `ProphecyCreated`, `ProphecyResolved`
 
 ## 🌐 API Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/health` | Service health check |
-| `GET /api/stats` | Aggregate statistics |
-| `GET /api/cults` | All cults ranked by treasury |
-| `GET /api/cults/:id` | Cult detail with prophecies & raids |
-| `GET /api/prophecies` | All prophecies (newest first) |
-| `GET /api/raids` | All raids (newest first) |
-| `GET /api/agents` | Agent statuses |
-| `GET /api/events` | SSE stream for live updates |
+| Endpoint              | Description                         |
+| --------------------- | ----------------------------------- |
+| `GET /api/health`     | Service health check                |
+| `GET /api/stats`      | Aggregate statistics                |
+| `GET /api/cults`      | All cults ranked by treasury        |
+| `GET /api/cults/:id`  | Cult detail with prophecies & raids |
+| `GET /api/prophecies` | All prophecies (newest first)       |
+| `GET /api/raids`      | All raids (newest first)            |
+| `GET /api/agents`     | Agent statuses                      |
+| `GET /api/events`     | SSE stream for live updates         |
 
 ## 🎮 Frontend Pages
 
@@ -162,13 +162,13 @@ Single contract handling all on-chain state:
 
 ## 🔗 Network Details
 
-| Parameter | Value |
-|-----------|-------|
-| Network | Monad Testnet |
-| Chain ID | 10143 |
-| RPC | https://testnet-rpc.monad.xyz |
-| Explorer | https://testnet.monadexplorer.com |
-| Faucet | https://faucet.monad.xyz |
+| Parameter | Value                             |
+| --------- | --------------------------------- |
+| Network   | Monad Testnet                     |
+| Chain ID  | 10143                             |
+| RPC       | https://testnet-rpc.monad.xyz     |
+| Explorer  | https://testnet.monadexplorer.com |
+| Faucet    | https://faucet.monad.xyz          |
 
 ## 🏆 Why AgentCult Wins
 
@@ -184,4 +184,4 @@ MIT
 
 ---
 
-*Built with 🔥 from Kolkata for the Moltiverse Hackathon*
+_Built with 🔥 from Kolkata for the Moltiverse Hackathon_

@@ -86,7 +86,7 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
     cultName: p.cultName,
     text: p.prediction,
     prediction: p.prediction,
-    confidence: 0.7 + Math.random() * 0.25,
+    confidence: p.confidence,
     resolved: p.resolved,
     correct: p.resolved ? p.correct : null,
     createdAt: p.createdAt,

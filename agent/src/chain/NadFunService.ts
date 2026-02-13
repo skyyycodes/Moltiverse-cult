@@ -7,6 +7,7 @@ const log = createLogger("NadFunService");
 // Minimal ABI for BondingCurveRouter
 const BONDING_CURVE_ROUTER_ABI = [
   "function create((string name, string symbol, string tokenURI, uint256 amountOut, bytes32 salt, uint256 actionId) params) payable returns (address token, address pool)",
+  "event TokenCreated(address indexed token, address indexed pool, address indexed creator, string name, string symbol)",
 ];
 
 const LENS_ABI = [
@@ -51,30 +52,51 @@ export class NadFunService {
       const receipt = await tx.wait();
       log.info(`Token created! TX: ${receipt.hash}`);
 
-      // Parse token address from events
+      // Strategy 1: Parse from TokenCreated event logs
+      let tokenAddress = "";
+      let poolAddress = "";
+
       for (const eventLog of receipt.logs) {
         try {
           const parsed = this.router.interface.parseLog({
             topics: eventLog.topics as string[],
             data: eventLog.data,
           });
-          if (parsed) {
-            log.info(`Event: ${parsed.name}`, parsed.args);
+          if (parsed && parsed.name === "TokenCreated") {
+            tokenAddress = parsed.args.token || parsed.args[0];
+            poolAddress = parsed.args.pool || parsed.args[1];
+            log.info(`Parsed TokenCreated: token=${tokenAddress}, pool=${poolAddress}`);
+            break;
           }
         } catch {
           // Not from our contract
         }
       }
 
-      // Try to extract from return value or event
-      // The create function returns (token, pool)
-      // For now, log the receipt and parse manually
-      log.info(`Full receipt logs: ${receipt.logs.length} events`);
+      // Strategy 2: If no event parsed, try extracting from any Transfer/PairCreated logs
+      if (!tokenAddress && receipt.logs.length > 0) {
+        // The first log with a new contract address is likely the token
+        for (const eventLog of receipt.logs) {
+          if (eventLog.address && eventLog.address !== config.nadFunRouter) {
+            if (!tokenAddress) {
+              tokenAddress = eventLog.address;
+            } else if (!poolAddress) {
+              poolAddress = eventLog.address;
+              break;
+            }
+          }
+        }
+        if (tokenAddress) {
+          log.info(`Extracted from logs: token=${tokenAddress}, pool=${poolAddress}`);
+        }
+      }
 
-      return {
-        tokenAddress: "", // Will be populated from event parsing
-        poolAddress: "",
-      };
+      if (!tokenAddress) {
+        log.warn("Could not parse token address from receipt. Check tx manually.");
+        log.info(`TX Hash: ${receipt.hash}`);
+      }
+
+      return { tokenAddress, poolAddress };
     } catch (error: any) {
       log.error(`Token creation failed: ${error.message}`);
       throw error;

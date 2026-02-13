@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { config } from "../config.js";
 import { ContractService, CultData } from "../chain/ContractService.js";
+import { TransactionQueue } from "../chain/TransactionQueue.js";
 import { LLMService } from "../services/LLMService.js";
 import { ProphecyService, Prophecy } from "../services/ProphecyService.js";
 import { RaidService, RaidEvent } from "../services/RaidService.js";
@@ -25,6 +26,7 @@ export interface AgentState {
 
 export class CultAgent {
   private contractService: ContractService;
+  private txQueue: TransactionQueue;
   private llm: LLMService;
   private prophecyService: ProphecyService;
   private raidService: RaidService;
@@ -49,6 +51,7 @@ export class CultAgent {
   ) {
     this.personality = personality;
     this.contractService = contractService;
+    this.txQueue = new TransactionQueue();
     this.llm = llm;
     this.prophecyService = prophecyService;
     this.raidService = raidService;
@@ -177,12 +180,15 @@ export class CultAgent {
       this.personality.systemPrompt
     );
 
-    // Record on-chain
+    // Record on-chain via transaction queue with retry
     try {
-      const onChainId = await this.contractService.createProphecy(
-        this.cultId,
-        prophecy.prediction,
-        Math.floor(prophecy.targetTimestamp / 1000)
+      const onChainId = await this.txQueue.enqueue(
+        `prophecy-${prophecy.id}`,
+        () => this.contractService.createProphecy(
+          this.cultId,
+          prophecy.prediction,
+          Math.floor(prophecy.targetTimestamp / 1000)
+        )
       );
       prophecy.onChainId = onChainId;
     } catch (error: any) {
@@ -245,13 +251,16 @@ export class CultAgent {
       decision.reason || "The spirits demanded sacrifice"
     );
 
-    // Record on-chain
+    // Record on-chain via transaction queue with retry
     try {
-      await this.contractService.recordRaid(
-        raid.attackerId,
-        raid.defenderId,
-        raid.attackerWon,
-        wagerAmount
+      await this.txQueue.enqueue(
+        `raid-${raid.id}`,
+        () => this.contractService.recordRaid(
+          raid.attackerId,
+          raid.defenderId,
+          raid.attackerWon,
+          wagerAmount
+        )
       );
     } catch (error: any) {
       this.log.warn(`Failed to record raid on-chain: ${error.message}`);
@@ -270,10 +279,13 @@ export class CultAgent {
 
       if (prophecy.onChainId >= 0) {
         try {
-          await this.contractService.resolveProphecy(
-            prophecy.onChainId,
-            correct,
-            correct ? 150 : 100 // 1.5x treasury multiplier for correct prophecies
+          await this.txQueue.enqueue(
+            `resolve-${prophecy.onChainId}`,
+            () => this.contractService.resolveProphecy(
+              prophecy.onChainId,
+              correct,
+              correct ? 150 : 100 // 1.5x treasury multiplier for correct prophecies
+            )
           );
         } catch (error: any) {
           this.log.warn(`Failed to resolve prophecy on-chain: ${error.message}`);

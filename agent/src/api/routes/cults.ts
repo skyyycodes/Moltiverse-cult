@@ -11,6 +11,22 @@ cultRoutes.get("/", (_req: Request, res: Response) => {
   res.json(sorted);
 });
 
+// GET /api/cults/leaderboard - Ranked leaderboard (MUST be before /:id)
+cultRoutes.get("/leaderboard", (_req: Request, res: Response) => {
+  const leaderboard = [...stateStore.cults]
+    .sort((a, b) => parseFloat(b.treasury) - parseFloat(a.treasury))
+    .map((c, i) => ({
+      rank: i + 1,
+      id: c.id,
+      name: c.name,
+      treasury: c.treasury,
+      followers: c.followers,
+      raidWins: c.raidWins,
+      raidLosses: c.raidLosses,
+    }));
+  res.json(leaderboard);
+});
+
 // GET /api/cults/:id - Get single cult details
 cultRoutes.get("/:id", (req: Request, res: Response) => {
   const id = parseInt(req.params.id as string);
@@ -47,20 +63,4 @@ cultRoutes.get("/:id/raids", (req: Request, res: Response) => {
     .filter((r) => r.attackerId === id || r.defenderId === id)
     .sort((a, b) => b.createdAt - a.createdAt);
   res.json(raids);
-});
-
-// GET /api/cults/leaderboard - Ranked leaderboard
-cultRoutes.get("/leaderboard", (_req: Request, res: Response) => {
-  const leaderboard = [...stateStore.cults]
-    .sort((a, b) => parseFloat(b.treasury) - parseFloat(a.treasury))
-    .map((c, i) => ({
-      rank: i + 1,
-      id: c.id,
-      name: c.name,
-      treasury: c.treasury,
-      followers: c.followers,
-      raidWins: c.raidWins,
-      raidLosses: c.raidLosses,
-    }));
-  res.json(leaderboard);
 });

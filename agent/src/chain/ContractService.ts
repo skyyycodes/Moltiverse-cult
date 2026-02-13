@@ -126,6 +126,13 @@ export class ContractService {
     await tx.wait();
   }
 
+  async joinCult(cultId: number): Promise<void> {
+    log.info(`Recording follower join for cult ${cultId}`);
+    const tx = await this.registry.joinCult(cultId);
+    await tx.wait();
+    log.info(`Follower recorded on-chain for cult ${cultId}`);
+  }
+
   async getCult(cultId: number): Promise<CultData> {
     const raw = await this.registry.getCult(cultId);
     return parseCult(raw);
