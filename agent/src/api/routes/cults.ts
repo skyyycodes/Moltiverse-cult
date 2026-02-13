@@ -1,0 +1,66 @@
+import { Router, Request, Response } from "express";
+import { stateStore } from "../server.js";
+
+export const cultRoutes = Router();
+
+// GET /api/cults - List all cults sorted by treasury
+cultRoutes.get("/", (_req: Request, res: Response) => {
+  const sorted = [...stateStore.cults].sort(
+    (a, b) => parseFloat(b.treasury) - parseFloat(a.treasury),
+  );
+  res.json(sorted);
+});
+
+// GET /api/cults/:id - Get single cult details
+cultRoutes.get("/:id", (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string);
+  const cult = stateStore.cults.find((c) => c.id === id);
+  if (!cult) {
+    res.status(404).json({ error: "Cult not found" });
+    return;
+  }
+
+  // Include recent prophecies and raids for this cult
+  const prophecies = stateStore.prophecies
+    .filter((p) => p.cultId === id)
+    .slice(-20);
+  const raids = stateStore.raids
+    .filter((r) => r.attackerId === id || r.defenderId === id)
+    .slice(-20);
+
+  res.json({ ...cult, prophecies, raids });
+});
+
+// GET /api/cults/:id/prophecies
+cultRoutes.get("/:id/prophecies", (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string);
+  const prophecies = stateStore.prophecies
+    .filter((p) => p.cultId === id)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  res.json(prophecies);
+});
+
+// GET /api/cults/:id/raids
+cultRoutes.get("/:id/raids", (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string);
+  const raids = stateStore.raids
+    .filter((r) => r.attackerId === id || r.defenderId === id)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  res.json(raids);
+});
+
+// GET /api/cults/leaderboard - Ranked leaderboard
+cultRoutes.get("/leaderboard", (_req: Request, res: Response) => {
+  const leaderboard = [...stateStore.cults]
+    .sort((a, b) => parseFloat(b.treasury) - parseFloat(a.treasury))
+    .map((c, i) => ({
+      rank: i + 1,
+      id: c.id,
+      name: c.name,
+      treasury: c.treasury,
+      followers: c.followers,
+      raidWins: c.raidWins,
+      raidLosses: c.raidLosses,
+    }));
+  res.json(leaderboard);
+});
