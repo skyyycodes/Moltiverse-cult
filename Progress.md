@@ -103,14 +103,14 @@ Frontend (Next.js 16 + Tailwind) ──REST/SSE──▶ Agent API (Express :300
 
 ### ⚠️ REMAINING GAPS (Cosmetic / Stretch)
 
-| Component                             | Status     | Notes                                                                                         |
-| ------------------------------------- | ---------- | --------------------------------------------------------------------------------------------- |
-| **Agent prompt mutation/evolution**    | NOT IMPL   | Agents don't mutate prompts based on wins. Static personalities.                              |
-| **x402 bribe streaming**              | NOT IMPL   | Stretch goal. Not implemented.                                                                |
-| **Mobile push alerts**                | NOT IMPL   | Stretch goal. Not implemented.                                                                |
-| **Cult growth curve analytics**       | NOT IMPL   | No TreasuryChart component. Could add recharts time-series.                                   |
-| **Twitter/Discord integration**       | NOT IMPL   | No social posting from agents.                                                                |
-| **FaithStaking frontend integration** | PARTIAL    | Contract exists, but no frontend UI for staking. Could add staking panel to cult detail page. |
+| Component                             | Status   | Notes                                                                                         |
+| ------------------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| **Agent prompt mutation/evolution**   | NOT IMPL | Agents don't mutate prompts based on wins. Static personalities.                              |
+| **x402 bribe streaming**              | NOT IMPL | Stretch goal. Not implemented.                                                                |
+| **Mobile push alerts**                | NOT IMPL | Stretch goal. Not implemented.                                                                |
+| **Cult growth curve analytics**       | NOT IMPL | No TreasuryChart component. Could add recharts time-series.                                   |
+| **Twitter/Discord integration**       | NOT IMPL | No social posting from agents.                                                                |
+| **FaithStaking frontend integration** | PARTIAL  | Contract exists, but no frontend UI for staking. Could add staking panel to cult detail page. |
 
 ---
 
@@ -169,6 +169,7 @@ NEXT_PUBLIC_API_URL=   # defaults to http://localhost:3001
    ```
 
 3. **Deploy frontend to Vercel**
+
    ```bash
    cd frontend && npx vercel --prod
    # Set NEXT_PUBLIC_API_URL env var to your agent API URL

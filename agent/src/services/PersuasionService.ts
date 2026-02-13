@@ -32,12 +32,12 @@ export class PersuasionService {
     cultName: string,
     systemPrompt: string,
     targetCultId: number,
-    targetCultName: string
+    targetCultName: string,
   ): Promise<PersuasionEvent> {
     const scripture = await this.llm.generateScripture(
       systemPrompt,
       cultName,
-      `Why followers of "${targetCultName}" should abandon their false prophets and join the true faith of "${cultName}"`
+      `Why followers of "${targetCultName}" should abandon their false prophets and join the true faith of "${cultName}"`,
     );
 
     // Simulated conversion - 1-3 followers per attempt
@@ -50,7 +50,9 @@ export class PersuasionService {
         await this.contractService.joinCult(cultId);
       }
       recordedOnChain = true;
-      log.info(`Recorded ${followersConverted} follower joins on-chain for cult ${cultId}`);
+      log.info(
+        `Recorded ${followersConverted} follower joins on-chain for cult ${cultId}`,
+      );
     } catch (error: any) {
       log.warn(`Failed to record followers on-chain: ${error.message}`);
     }
@@ -69,7 +71,9 @@ export class PersuasionService {
 
     this.events.push(event);
     log.info(
-      `${cultName} converted ${followersConverted} followers from ${targetCultName}${recordedOnChain ? " (on-chain)" : " (off-chain)"}`
+      `${cultName} converted ${followersConverted} followers from ${targetCultName}${
+        recordedOnChain ? " (on-chain)" : " (off-chain)"
+      }`,
     );
 
     return event;

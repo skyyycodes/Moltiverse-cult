@@ -33,13 +33,13 @@ export class ProphecyService {
   async generateProphecy(
     cultId: number,
     cultName: string,
-    systemPrompt: string
+    systemPrompt: string,
   ): Promise<Prophecy> {
     const marketData = await this.market.getMarketData();
     const prediction = await this.llm.generateProphecy(
       systemPrompt,
       cultName,
-      marketData.summary
+      marketData.summary,
     );
 
     // Extract a confidence score from the prediction text (heuristic)
@@ -60,7 +60,11 @@ export class ProphecyService {
     };
 
     this.prophecies.push(prophecy);
-    log.info(`Prophecy generated for ${cultName} (confidence: ${(confidence * 100).toFixed(0)}%): ${prediction.slice(0, 60)}...`);
+    log.info(
+      `Prophecy generated for ${cultName} (confidence: ${(
+        confidence * 100
+      ).toFixed(0)}%): ${prediction.slice(0, 60)}...`,
+    );
     return prophecy;
   }
 
@@ -82,10 +86,20 @@ export class ProphecyService {
     if (Math.abs(percentChange) < 0.5) {
       // Sideways market — slight bias toward correct for engagement
       correct = Math.random() > 0.45;
-      log.info(`Prophecy ${prophecyId}: market flat (${percentChange.toFixed(2)}%), random resolution: ${correct}`);
+      log.info(
+        `Prophecy ${prophecyId}: market flat (${percentChange.toFixed(
+          2,
+        )}%), random resolution: ${correct}`,
+      );
     } else {
       correct = isBullishPrediction ? priceDelta > 0 : priceDelta < 0;
-      log.info(`Prophecy ${prophecyId}: predicted ${isBullishPrediction ? "bullish" : "bearish"}, price moved ${percentChange.toFixed(2)}% → ${correct ? "CORRECT" : "FALSE"}`);
+      log.info(
+        `Prophecy ${prophecyId}: predicted ${
+          isBullishPrediction ? "bullish" : "bearish"
+        }, price moved ${percentChange.toFixed(2)}% → ${
+          correct ? "CORRECT" : "FALSE"
+        }`,
+      );
     }
 
     prophecy.resolved = true;
@@ -95,8 +109,38 @@ export class ProphecyService {
 
   private isPredictionBullish(prediction: string): boolean {
     const lower = prediction.toLowerCase();
-    const bullishWords = ["up", "rise", "moon", "pump", "green", "ascend", "higher", "bull", "rally", "accumulate", "buy", "recover", "breakout", "ath", "surge"];
-    const bearishWords = ["down", "fall", "dump", "crash", "red", "descend", "lower", "bear", "drop", "sell", "decline", "collapse", "plunge"];
+    const bullishWords = [
+      "up",
+      "rise",
+      "moon",
+      "pump",
+      "green",
+      "ascend",
+      "higher",
+      "bull",
+      "rally",
+      "accumulate",
+      "buy",
+      "recover",
+      "breakout",
+      "ath",
+      "surge",
+    ];
+    const bearishWords = [
+      "down",
+      "fall",
+      "dump",
+      "crash",
+      "red",
+      "descend",
+      "lower",
+      "bear",
+      "drop",
+      "sell",
+      "decline",
+      "collapse",
+      "plunge",
+    ];
     const bullishScore = bullishWords.filter((w) => lower.includes(w)).length;
     const bearishScore = bearishWords.filter((w) => lower.includes(w)).length;
     return bullishScore >= bearishScore; // Default to bullish if ambiguous
@@ -106,12 +150,27 @@ export class ProphecyService {
     // Extract confidence heuristic from prediction text
     const lower = prediction.toLowerCase();
     let confidence = 0.7; // base
-    if (lower.includes("certain") || lower.includes("guaranteed") || lower.includes("100%")) confidence = 0.95;
-    else if (lower.includes("highly likely") || lower.includes("confident")) confidence = 0.88;
-    else if (lower.includes("likely") || lower.includes("probable")) confidence = 0.78;
-    else if (lower.includes("uncertain") || lower.includes("unclear") || lower.includes("maybe")) confidence = 0.55;
+    if (
+      lower.includes("certain") ||
+      lower.includes("guaranteed") ||
+      lower.includes("100%")
+    )
+      confidence = 0.95;
+    else if (lower.includes("highly likely") || lower.includes("confident"))
+      confidence = 0.88;
+    else if (lower.includes("likely") || lower.includes("probable"))
+      confidence = 0.78;
+    else if (
+      lower.includes("uncertain") ||
+      lower.includes("unclear") ||
+      lower.includes("maybe")
+    )
+      confidence = 0.55;
     // Add small noise
-    return Math.min(0.99, Math.max(0.4, confidence + (Math.random() - 0.5) * 0.1));
+    return Math.min(
+      0.99,
+      Math.max(0.4, confidence + (Math.random() - 0.5) * 0.1),
+    );
   }
 
   getRecentProphecies(limit: number = 20): Prophecy[] {
@@ -123,7 +182,9 @@ export class ProphecyService {
   }
 
   getUnresolvedProphecies(): Prophecy[] {
-    return this.prophecies.filter((p) => !p.resolved && Date.now() > p.targetTimestamp);
+    return this.prophecies.filter(
+      (p) => !p.resolved && Date.now() > p.targetTimestamp,
+    );
   }
 
   getAllProphecies(): Prophecy[] {

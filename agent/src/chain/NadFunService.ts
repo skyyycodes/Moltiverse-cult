@@ -24,8 +24,15 @@ export class NadFunService {
 
   constructor(privateKey?: string) {
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
-    this.wallet = new ethers.Wallet(privateKey || config.privateKey, this.provider);
-    this.router = new ethers.Contract(config.nadFunRouter, BONDING_CURVE_ROUTER_ABI, this.wallet);
+    this.wallet = new ethers.Wallet(
+      privateKey || config.privateKey,
+      this.provider,
+    );
+    this.router = new ethers.Contract(
+      config.nadFunRouter,
+      BONDING_CURVE_ROUTER_ABI,
+      this.wallet,
+    );
     this.lens = new ethers.Contract(config.nadFunLens, LENS_ABI, this.provider);
   }
 
@@ -33,7 +40,7 @@ export class NadFunService {
     name: string,
     symbol: string,
     metadataUri: string,
-    initialBuyMon: bigint = ethers.parseEther("0.01")
+    initialBuyMon: bigint = ethers.parseEther("0.01"),
   ): Promise<{ tokenAddress: string; poolAddress: string }> {
     log.info(`Creating token: ${name} (${symbol})`);
 
@@ -65,7 +72,9 @@ export class NadFunService {
           if (parsed && parsed.name === "TokenCreated") {
             tokenAddress = parsed.args.token || parsed.args[0];
             poolAddress = parsed.args.pool || parsed.args[1];
-            log.info(`Parsed TokenCreated: token=${tokenAddress}, pool=${poolAddress}`);
+            log.info(
+              `Parsed TokenCreated: token=${tokenAddress}, pool=${poolAddress}`,
+            );
             break;
           }
         } catch {
@@ -87,12 +96,16 @@ export class NadFunService {
           }
         }
         if (tokenAddress) {
-          log.info(`Extracted from logs: token=${tokenAddress}, pool=${poolAddress}`);
+          log.info(
+            `Extracted from logs: token=${tokenAddress}, pool=${poolAddress}`,
+          );
         }
       }
 
       if (!tokenAddress) {
-        log.warn("Could not parse token address from receipt. Check tx manually.");
+        log.warn(
+          "Could not parse token address from receipt. Check tx manually.",
+        );
         log.info(`TX Hash: ${receipt.hash}`);
       }
 
@@ -116,9 +129,13 @@ export class NadFunService {
   async getAmountOut(
     tokenAddress: string,
     amountIn: bigint,
-    isBuy: boolean
+    isBuy: boolean,
   ): Promise<{ router: string; amountOut: bigint }> {
-    const [router, amountOut] = await this.lens.getAmountOut(tokenAddress, amountIn, isBuy);
+    const [router, amountOut] = await this.lens.getAmountOut(
+      tokenAddress,
+      amountIn,
+      isBuy,
+    );
     return { router, amountOut };
   }
 
@@ -140,7 +157,9 @@ export class NadFunService {
   // Fetch market data from nad.fun REST API
   async getTokenMarket(tokenAddress: string): Promise<any> {
     try {
-      const res = await fetch(`${config.nadFunApiBase}/token/market/${tokenAddress}`);
+      const res = await fetch(
+        `${config.nadFunApiBase}/token/market/${tokenAddress}`,
+      );
       if (!res.ok) return null;
       return res.json();
     } catch {

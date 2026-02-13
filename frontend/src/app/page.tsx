@@ -80,46 +80,46 @@ export default function Dashboard() {
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <span>⚔️</span> Recent Raids
             </h2>
-          <div className="space-y-2">
-            {(raids || []).slice(0, 5).map((raid) => (
-              <div
-                key={raid.id}
-                className="border border-gray-800 rounded-lg p-3 flex items-center justify-between"
-              >
-                <div className="flex items-center gap-2 text-sm">
-                  <span
-                    className="font-semibold"
-                    style={{
-                      color: raid.attackerWon
-                        ? CULT_COLORS[raid.attackerId] || "#fff"
-                        : "#666",
-                    }}
-                  >
-                    {raid.attackerName}
-                  </span>
-                  <span className="text-gray-600 text-xs">⚔️</span>
-                  <span
-                    className="font-semibold"
-                    style={{
-                      color: !raid.attackerWon
-                        ? CULT_COLORS[raid.defenderId] || "#fff"
-                        : "#666",
-                    }}
-                  >
-                    {raid.defenderName}
+            <div className="space-y-2">
+              {(raids || []).slice(0, 5).map((raid) => (
+                <div
+                  key={raid.id}
+                  className="border border-gray-800 rounded-lg p-3 flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2 text-sm">
+                    <span
+                      className="font-semibold"
+                      style={{
+                        color: raid.attackerWon
+                          ? CULT_COLORS[raid.attackerId] || "#fff"
+                          : "#666",
+                      }}
+                    >
+                      {raid.attackerName}
+                    </span>
+                    <span className="text-gray-600 text-xs">⚔️</span>
+                    <span
+                      className="font-semibold"
+                      style={{
+                        color: !raid.attackerWon
+                          ? CULT_COLORS[raid.defenderId] || "#fff"
+                          : "#666",
+                      }}
+                    >
+                      {raid.defenderName}
+                    </span>
+                  </div>
+                  <span className="text-xs text-green-400 font-mono">
+                    {parseFloat(raid.amount).toFixed(4)} MON
                   </span>
                 </div>
-                <span className="text-xs text-green-400 font-mono">
-                  {parseFloat(raid.amount).toFixed(4)} MON
-                </span>
-              </div>
-            ))}
-            {(!raids || raids.length === 0) && (
-              <div className="text-center text-gray-500 py-6 font-mono text-sm">
-                Peace reigns... for now.
-              </div>
-            )}
-          </div>
+              ))}
+              {(!raids || raids.length === 0) && (
+                <div className="text-center text-gray-500 py-6 font-mono text-sm">
+                  Peace reigns... for now.
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Deploy New Agent */}

@@ -41,11 +41,14 @@ export class ContractService {
 
   constructor(privateKey?: string) {
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
-    this.wallet = new ethers.Wallet(privateKey || config.privateKey, this.provider);
+    this.wallet = new ethers.Wallet(
+      privateKey || config.privateKey,
+      this.provider,
+    );
     this.registry = new ethers.Contract(
       config.cultRegistryAddress,
       CULT_REGISTRY_ABI,
-      this.wallet
+      this.wallet,
     );
   }
 
@@ -61,20 +64,35 @@ export class ContractService {
     name: string,
     prophecyPrompt: string,
     tokenAddress: string,
-    initialTreasury: bigint = 0n
+    initialTreasury: bigint = 0n,
   ): Promise<number> {
     log.info(`Registering cult: ${name}`);
-    const tx = await this.registry.registerCult(name, prophecyPrompt, tokenAddress, {
-      value: initialTreasury,
-    });
+    const tx = await this.registry.registerCult(
+      name,
+      prophecyPrompt,
+      tokenAddress,
+      {
+        value: initialTreasury,
+      },
+    );
     const receipt = await tx.wait();
     const event = receipt.logs.find((l: any) => {
       try {
-        return this.registry.interface.parseLog({ topics: l.topics as string[], data: l.data })?.name === "CultRegistered";
-      } catch { return false; }
+        return (
+          this.registry.interface.parseLog({
+            topics: l.topics as string[],
+            data: l.data,
+          })?.name === "CultRegistered"
+        );
+      } catch {
+        return false;
+      }
     });
     if (event) {
-      const parsed = this.registry.interface.parseLog({ topics: event.topics as string[], data: event.data });
+      const parsed = this.registry.interface.parseLog({
+        topics: event.topics as string[],
+        data: event.data,
+      });
       const cultId = Number(parsed!.args.cultId);
       log.info(`Cult registered with ID: ${cultId}`);
       return cultId;
@@ -87,10 +105,19 @@ export class ContractService {
     attackerId: number,
     defenderId: number,
     attackerWon: boolean,
-    amount: bigint
+    amount: bigint,
   ): Promise<void> {
-    log.info(`Recording raid: ${attackerId} vs ${defenderId}, winner: ${attackerWon ? "attacker" : "defender"}`);
-    const tx = await this.registry.recordRaid(attackerId, defenderId, attackerWon, amount);
+    log.info(
+      `Recording raid: ${attackerId} vs ${defenderId}, winner: ${
+        attackerWon ? "attacker" : "defender"
+      }`,
+    );
+    const tx = await this.registry.recordRaid(
+      attackerId,
+      defenderId,
+      attackerWon,
+      amount,
+    );
     await tx.wait();
     log.info("Raid recorded on-chain");
   }
@@ -98,27 +125,53 @@ export class ContractService {
   async createProphecy(
     cultId: number,
     prediction: string,
-    targetTimestamp: number
+    targetTimestamp: number,
   ): Promise<number> {
-    log.info(`Creating prophecy for cult ${cultId}: ${prediction.slice(0, 50)}...`);
-    const tx = await this.registry.createProphecy(cultId, prediction, targetTimestamp);
+    log.info(
+      `Creating prophecy for cult ${cultId}: ${prediction.slice(0, 50)}...`,
+    );
+    const tx = await this.registry.createProphecy(
+      cultId,
+      prediction,
+      targetTimestamp,
+    );
     const receipt = await tx.wait();
     const event = receipt.logs.find((l: any) => {
       try {
-        return this.registry.interface.parseLog({ topics: l.topics as string[], data: l.data })?.name === "ProphecyCreated";
-      } catch { return false; }
+        return (
+          this.registry.interface.parseLog({
+            topics: l.topics as string[],
+            data: l.data,
+          })?.name === "ProphecyCreated"
+        );
+      } catch {
+        return false;
+      }
     });
     if (event) {
-      const parsed = this.registry.interface.parseLog({ topics: event.topics as string[], data: event.data });
+      const parsed = this.registry.interface.parseLog({
+        topics: event.topics as string[],
+        data: event.data,
+      });
       return Number(parsed!.args.prophecyId);
     }
     return -1;
   }
 
-  async resolveProphecy(prophecyId: number, correct: boolean, multiplier: number): Promise<void> {
-    const tx = await this.registry.resolveProphecy(prophecyId, correct, multiplier);
+  async resolveProphecy(
+    prophecyId: number,
+    correct: boolean,
+    multiplier: number,
+  ): Promise<void> {
+    const tx = await this.registry.resolveProphecy(
+      prophecyId,
+      correct,
+      multiplier,
+    );
     await tx.wait();
-    log.info(`Prophecy ${prophecyId} resolved: correct=${correct}, multiplier=${multiplier}`);
+    log.info(
+      `Prophecy ${prophecyId} resolved: correct=${correct}, multiplier=${multiplier}`,
+    );
   }
 
   async depositToTreasury(cultId: number, amount: bigint): Promise<void> {

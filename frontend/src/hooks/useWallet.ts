@@ -28,14 +28,22 @@ export function useWallet() {
 
   const connect = useCallback(async () => {
     if (typeof window === "undefined" || !(window as any).ethereum) {
-      setState((s) => ({ ...s, error: "No wallet detected. Install MetaMask." }));
+      setState((s) => ({
+        ...s,
+        error: "No wallet detected. Install MetaMask.",
+      }));
       return;
     }
 
     try {
       const ethereum = (window as any).ethereum;
-      const accounts = await ethereum.request({ method: "eth_requestAccounts" });
-      const chainId = parseInt(await ethereum.request({ method: "eth_chainId" }), 16);
+      const accounts = await ethereum.request({
+        method: "eth_requestAccounts",
+      });
+      const chainId = parseInt(
+        await ethereum.request({ method: "eth_chainId" }),
+        16,
+      );
 
       // Switch to Monad testnet if needed
       if (chainId !== MONAD_CHAIN_ID) {
