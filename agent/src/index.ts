@@ -18,7 +18,7 @@ async function main() {
   await orchestrator.bootstrap();
 
   // Start the Express API server with orchestrator for dynamic agent routes
-  const apiPort = parseInt(process.env.API_PORT || "3001");
+  const apiPort = config.apiPort;
   startApiServer(apiPort, orchestrator);
 
   // Sync agent state into the API store every 3 seconds
@@ -112,6 +112,7 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
   // Sync governance proposals
   const allProposals = orchestrator.governanceService.getAllProposals();
   stateStore.proposals = allProposals;
+  stateStore.budgets = orchestrator.governanceService.getAllBudgets();
 
   // Sync alliance, memory, and defection data
   stateStore.alliances = orchestrator.allianceService.getAllAlliances();

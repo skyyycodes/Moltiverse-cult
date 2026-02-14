@@ -84,7 +84,7 @@ describe("CultRegistry", function () {
       });
 
       // Owner creates prophecy on behalf
-      await registry.createProphecy(0, "ETH to 10k by EOW", Math.floor(Date.now() / 1000) + 86400);
+      await registry.createProphecy(0, ethers.encodeBytes32String("ETH to 10k by EOW"), Math.floor(Date.now() / 1000) + 86400);
 
       // Resolve as correct with 1.5x multiplier
       await registry.resolveProphecy(0, true, 150);

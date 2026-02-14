@@ -41,12 +41,14 @@ export interface Raid {
 export interface AgentInfo {
   cultId: number;
   name: string;
-  status: "running" | "stopped" | "idle";
+  status: "running" | "stopped" | "idle" | "dead";
   lastAction: string;
   lastActionTime: number;
   totalProphecies: number;
   totalRaids: number;
   totalFollowersRecruited: number;
+  dead?: boolean;
+  deathCause?: string;
 }
 
 export interface Stats {

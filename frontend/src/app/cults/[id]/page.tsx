@@ -77,7 +77,6 @@ export default function CultDetailPage() {
           <StatBlock
             label="Win Rate"
             value={`${winRate}%`}
-            color={`text-[${color}]`}
           />
         </div>
 

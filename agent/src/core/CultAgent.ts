@@ -16,6 +16,7 @@ import { AllianceService } from "../services/AllianceService.js";
 import { CommunicationService } from "../services/CommunicationService.js";
 import { EvolutionService } from "../services/EvolutionService.js";
 import { MarketService } from "../services/MarketService.js";
+import { DefectionService } from "../services/DefectionService.js";
 import { Personality } from "./AgentPersonality.js";
 import { createLogger } from "../utils/logger.js";
 import { randomDelay } from "../utils/sleep.js";
@@ -50,6 +51,7 @@ export class CultAgent {
   private communicationService: CommunicationService;
   private evolutionService: EvolutionService;
   private market: MarketService;
+  private defectionService: DefectionService;
   private log;
 
   public cultId: number = -1;
@@ -74,6 +76,7 @@ export class CultAgent {
     communicationService: CommunicationService,
     evolutionService: EvolutionService,
     market: MarketService,
+    defectionService: DefectionService,
   ) {
     this.personality = personality;
     this.contractService = contractService;
@@ -89,6 +92,7 @@ export class CultAgent {
     this.communicationService = communicationService;
     this.evolutionService = evolutionService;
     this.market = market;
+    this.defectionService = defectionService;
     this.log = createLogger(`Agent:${personality.name.slice(0, 20)}`);
 
     this.state = {
@@ -197,7 +201,7 @@ export class CultAgent {
 
     // Phase 2: Think - ask LLM what to do (with memory context + evolution)
     const memorySnapshot = this.memoryService.getSnapshot(this.cultId);
-    const prophecyAccuracy = this.state.propheciesGenerated > 0 ? 0.5 : 0; // placeholder
+    const prophecyAccuracy = this.prophecyService.getAccuracyForCult(this.cultId);
     this.evolutionService.evolve(
       this.cultId,
       this.personality,
@@ -347,6 +351,9 @@ export class CultAgent {
       this.personality.systemPrompt,
       target.id,
       target.name,
+      Number(ethers.formatEther(cultState.treasuryBalance)),
+      cultState.followerCount,
+      target.followerCount,
     );
 
     this.state.followersRecruited += event.followersConverted;
@@ -442,6 +449,13 @@ export class CultAgent {
         this.cultId,
         ethers.formatEther(wagerAmount),
       );
+    }
+
+    // Trigger defections after raid (loser's followers may defect to winner)
+    if (raid.attackerWon) {
+      this.defectionService.checkDefection(target, cultState);
+    } else {
+      this.defectionService.checkDefection(cultState, target);
     }
 
     // Resolve any expired spoils votes

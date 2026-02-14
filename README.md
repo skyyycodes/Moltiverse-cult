@@ -186,3 +186,14 @@ MIT
 ---
 
 _Built with 🔥 from Kolkata for the Moltiverse Hackathon_
+
+
+Deploying contracts with account: 0xf6e3965Cb27e85aD7032ae68320477B2A07419d0
+Account balance: 10.0 MON
+CultRegistry deployed to: 0x599614Cf813aD373391fb3AEB52D11B071A1df82
+FaithStaking deployed to: 0x683E3ACC03Aeb5B8400F3Ee3Cf3fC70fE0cd6f4e
+GovernanceEngine deployed to: 0x36156dbe9Ff7BdC6cfd8d0D8A72C1a054fDf2454
+SocialGraph deployed to: 0x7De6d1B6E089a5DCF2b3462C010BcdBb3CD3c5E2
+EconomyEngine deployed to: 0xEdf9CB6F5770d50AC8e29A170F97E8C6804F9005
+RaidEngine deployed to: 0x90D6c11161D5DD973D3eC16142540FC8Ed39D099
+EventEmitter deployed to: 0xB6768C55Bd471d52bbBf527E325770766665f0D1

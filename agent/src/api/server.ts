@@ -134,17 +134,19 @@ export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
   app.use("/api/cults", cultRoutes);
   app.use("/api/prophecies", prophecyRoutes);
   app.use("/api/raids", raidRoutes);
-  app.use("/api/agents", agentRoutes);
   app.use("/api/governance", governanceRoutes);
   app.use("/api/alliances", allianceRoutes(stateStore));
   app.use("/api/communication", communicationRoutes(stateStore));
   app.use("/api/events", sseRoutes);
 
-  // Mount new routes (require orchestrator for dynamic agent management)
+  // Mount dynamic agent management routes (require orchestrator)
   if (orchestrator) {
-    app.use("/api/agents", agentCreationRoutes(orchestrator));
+    app.use("/api/agents/management", agentCreationRoutes(orchestrator));
     app.use("/api/social", memeTransferRoutes(orchestrator));
   }
+
+  // Mount static agent routes last (after specific paths)
+  app.use("/api/agents", agentRoutes);
 
   // Stats endpoint
   app.get("/api/stats", (_req, res) => {

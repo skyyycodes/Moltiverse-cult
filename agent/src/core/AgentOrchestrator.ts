@@ -151,6 +151,7 @@ export class AgentOrchestrator {
       this.communicationService,
       this.evolutionService,
       this.market,
+      this.defectionService,
     );
 
     // Set the agent's DB id so it can persist state

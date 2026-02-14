@@ -38,7 +38,8 @@ function BudgetBar({ label, percent, color }: { label: string; percent: number; 
 function ProposalCard({ proposal }: { proposal: Proposal }) {
     const totalVotes = proposal.votesFor + proposal.votesAgainst;
     const forPercent = totalVotes > 0 ? Math.round((proposal.votesFor / totalVotes) * 100) : 0;
-    const timeAgo = Math.floor((Date.now() / 1000 - proposal.createdAt) / 60);
+    const createdTime = proposal.createdAt > 1e12 ? proposal.createdAt : proposal.createdAt * 1000;
+    const timeAgo = Math.floor((Date.now() - createdTime) / 60000);
 
     return (
         <div className="bg-[#0d0d0d] border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
