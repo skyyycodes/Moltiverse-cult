@@ -1,0 +1,20 @@
+{
+  "name": "agentcult",
+  "version": "1.0.0",
+  "description": "AgentCult: Emergent Religious Economies - Autonomous AI cult leaders on Monad",
+  "private": true,
+  "workspaces": [
+    "contracts",
+    "agent",
+    "frontend"
+  ],
+  "scripts": {
+    "contracts:compile": "npm run compile --workspace=contracts",
+    "contracts:deploy": "npm run deploy --workspace=contracts",
+    "contracts:test": "npm run test --workspace=contracts",
+    "agent:dev": "npm run dev --workspace=agent",
+    "agent:start": "npm run start --workspace=agent",
+    "frontend:dev": "npm run dev --workspace=frontend",
+    "frontend:build": "npm run build --workspace=frontend"
+  }
+}

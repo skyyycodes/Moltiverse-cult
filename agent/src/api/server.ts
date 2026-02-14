@@ -1,0 +1,205 @@
+import express from "express";
+import cors from "cors";
+import { createLogger } from "../utils/logger.js";
+import { cultRoutes } from "./routes/cults.js";
+import { prophecyRoutes } from "./routes/prophecies.js";
+import { raidRoutes } from "./routes/raids.js";
+import { agentRoutes } from "./routes/agents.js";
+<<<<<<< HEAD
+import { governanceRoutes } from "./routes/governance.js";
+import { allianceRoutes } from "./routes/alliances.js";
+import { communicationRoutes } from "./routes/communication.js";
+import { sseRoutes } from "./routes/sse.js";
+import { agentCreationRoutes } from "./routes/agentCreation.js";
+import { memeTransferRoutes } from "./routes/memeTransfers.js";
+import type { AgentOrchestrator } from "../core/AgentOrchestrator.js";
+=======
+import { sseRoutes } from "./routes/sse.js";
+>>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
+
+const log = createLogger("API");
+
+// In-memory state store shared across routes
+export interface StateStore {
+  cults: CultInfo[];
+  prophecies: ProphecyInfo[];
+  raids: RaidInfo[];
+  agents: AgentInfo[];
+<<<<<<< HEAD
+  proposals: any[];
+  budgets: Record<number, any>;
+  alliances: any[];
+  activeAlliances: any[];
+  betrayals: any[];
+  defections: any[];
+  memory: Record<number, any>;
+  messages: any[];
+  evolutionTraits: Record<number, any>;
+=======
+>>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
+  sseClients: express.Response[];
+}
+
+export interface CultInfo {
+  id: number;
+  name: string;
+  personality: string;
+  prophecyPrompt: string;
+  tokenAddress: string;
+  treasury: string;
+  followers: number;
+  raidWins: number;
+  raidLosses: number;
+  createdAt: number;
+}
+
+export interface ProphecyInfo {
+  id: string;
+  cultId: number;
+  cultName: string;
+  text: string;
+  prediction: string;
+  confidence: number;
+  resolved: boolean;
+  correct: boolean | null;
+  createdAt: number;
+  resolvedAt: number | null;
+}
+
+export interface RaidInfo {
+  id: string;
+  attackerId: number;
+  attackerName: string;
+  defenderId: number;
+  defenderName: string;
+  amount: string;
+  attackerWon: boolean;
+  scripture: string;
+  createdAt: number;
+}
+
+export interface AgentInfo {
+  cultId: number;
+  name: string;
+<<<<<<< HEAD
+  status: "running" | "stopped" | "idle" | "dead";
+  dead: boolean;
+  deathCause: string | null;
+=======
+  status: "running" | "stopped" | "idle";
+>>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
+  lastAction: string;
+  lastActionTime: number;
+  totalProphecies: number;
+  totalRaids: number;
+  totalFollowersRecruited: number;
+}
+
+// Global state store
+export const stateStore: StateStore = {
+  cults: [],
+  prophecies: [],
+  raids: [],
+  agents: [],
+<<<<<<< HEAD
+  proposals: [],
+  budgets: {},
+  alliances: [],
+  activeAlliances: [],
+  betrayals: [],
+  defections: [],
+  memory: {},
+  messages: [],
+  evolutionTraits: {},
+=======
+>>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
+  sseClients: [],
+};
+
+// Broadcast event to all SSE clients
+export function broadcastEvent(event: string, data: any) {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  stateStore.sseClients.forEach((client) => {
+    try {
+      client.write(payload);
+    } catch {
+      // Client disconnected
+    }
+  });
+}
+
+<<<<<<< HEAD
+export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
+=======
+export function startApiServer(port: number) {
+>>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
+  const app = express();
+
+  app.use(cors());
+  app.use(express.json());
+
+  // Health check
+  app.get("/api/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      uptime: process.uptime(),
+      cults: stateStore.cults.length,
+      agents: stateStore.agents.length,
+    });
+  });
+
+  // Mount routes
+  app.use("/api/cults", cultRoutes);
+  app.use("/api/prophecies", prophecyRoutes);
+  app.use("/api/raids", raidRoutes);
+  app.use("/api/agents", agentRoutes);
+<<<<<<< HEAD
+  app.use("/api/governance", governanceRoutes);
+  app.use("/api/alliances", allianceRoutes(stateStore));
+  app.use("/api/communication", communicationRoutes(stateStore));
+  app.use("/api/events", sseRoutes);
+
+  // Mount new routes (require orchestrator for dynamic agent management)
+  if (orchestrator) {
+    app.use("/api/agents", agentCreationRoutes(orchestrator));
+    app.use("/api/social", memeTransferRoutes(orchestrator));
+  }
+
+=======
+  app.use("/api/events", sseRoutes);
+
+>>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
+  // Stats endpoint
+  app.get("/api/stats", (_req, res) => {
+    const totalTreasury = stateStore.cults.reduce(
+      (sum, c) => sum + parseFloat(c.treasury || "0"),
+      0,
+    );
+    const totalFollowers = stateStore.cults.reduce(
+      (sum, c) => sum + c.followers,
+      0,
+    );
+    const totalRaids = stateStore.raids.length;
+    const totalProphecies = stateStore.prophecies.length;
+    const activeProphecies = stateStore.prophecies.filter(
+      (p) => !p.resolved,
+    ).length;
+
+    res.json({
+      totalCults: stateStore.cults.length,
+      totalTreasury: totalTreasury.toFixed(4),
+      totalFollowers,
+      totalRaids,
+      totalProphecies,
+      activeProphecies,
+      activeAgents: stateStore.agents.filter((a) => a.status === "running")
+        .length,
+    });
+  });
+
+  app.listen(port, () => {
+    log.info(`API server running on http://localhost:${port}`);
+  });
+
+  return app;
+}

@@ -1,0 +1,687 @@
+import { createClient } from "@insforge/sdk";
+import { ethers } from "ethers";
+import { config } from "../config.js";
+import { createLogger } from "../utils/logger.js";
+import type { MemoryEntry, TrustRecord, StreakInfo } from "./MemoryService.js";
+import type { AgentDecision } from "./LLMService.js";
+
+const log = createLogger("InsForgeService");
+
+// ── InsForge Client Singleton ────────────────────────────────────────
+
+let _client: ReturnType<typeof createClient> | null = null;
+
+export function getInsForgeClient() {
+  if (!_client) {
+    _client = createClient({
+      baseUrl: config.insforgeBaseUrl,
+      anonKey: config.insforgeAnonKey,
+    });
+    log.info(`InsForge client initialized → ${config.insforgeBaseUrl}`);
+  }
+  return _client;
+}
+
+// ── DB Row Types ─────────────────────────────────────────────────────
+
+export interface AgentRow {
+  id: number;
+  cult_id: number | null;
+  owner_id: string | null;
+  name: string;
+  symbol: string;
+  style: string;
+  system_prompt: string;
+  description: string;
+  wallet_address: string;
+  wallet_private_key: string;
+  llm_api_key: string | null;
+  llm_base_url: string;
+  llm_model: string;
+  token_address: string;
+  status: "active" | "stopped" | "dead";
+  dead: boolean;
+  death_cause: string | null;
+  cycle_count: number;
+  prophecies_generated: number;
+  raids_initiated: number;
+  raids_won: number;
+  followers_recruited: number;
+  last_action: string;
+  last_action_time: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAgentInput {
+  name: string;
+  symbol?: string;
+  style?: string;
+  system_prompt: string;
+  description?: string;
+  owner_id?: string;
+  llm_api_key?: string;
+  llm_base_url?: string;
+  llm_model?: string;
+  token_address?: string;
+  /** If user provides their own wallet */
+  wallet_private_key?: string;
+}
+
+// ── Agent CRUD ───────────────────────────────────────────────────────
+
+/**
+ * Create a new agent with its own wallet.
+ * Generates a fresh Ethereum wallet if none provided.
+ */
+export async function createAgent(input: CreateAgentInput): Promise<AgentRow> {
+  const db = getInsForgeClient().database;
+
+  // Generate unique wallet for this agent
+  let walletAddress: string;
+  let walletPrivateKey: string;
+
+  if (input.wallet_private_key) {
+    const wallet = new ethers.Wallet(input.wallet_private_key);
+    walletAddress = wallet.address;
+    walletPrivateKey = input.wallet_private_key;
+  } else {
+    const wallet = ethers.Wallet.createRandom();
+    walletAddress = wallet.address;
+    walletPrivateKey = wallet.privateKey;
+  }
+
+  const row = {
+    name: input.name,
+    symbol: input.symbol || "CULT",
+    style: input.style || "custom",
+    system_prompt: input.system_prompt,
+    description: input.description || "",
+    owner_id: input.owner_id || null,
+    wallet_address: walletAddress,
+    wallet_private_key: walletPrivateKey,
+    llm_api_key: input.llm_api_key || null,
+    llm_base_url: input.llm_base_url || "https://api.x.ai/v1",
+    llm_model: input.llm_model || "grok-3-fast",
+    token_address: input.token_address || ethers.ZeroAddress,
+    status: "active",
+    dead: false,
+    last_action: "initialized",
+    last_action_time: Date.now(),
+  };
+
+  const { data, error } = await db.from("agents").insert(row).select();
+  if (error) throw new Error(`Failed to create agent: ${JSON.stringify(error)}`);
+  log.info(`Agent created: ${input.name} → wallet ${walletAddress}`);
+  return (data as AgentRow[])[0];
+}
+
+/**
+ * Load all active agents from DB.
+ */
+export async function loadAllAgents(): Promise<AgentRow[]> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("agents")
+    .select()
+    .neq("status", "stopped")
+    .order("id", { ascending: true });
+  if (error) {
+    log.error(`Failed to load agents: ${JSON.stringify(error)}`);
+    return [];
+  }
+  return (data as AgentRow[]) || [];
+}
+
+/**
+ * Load a single agent by DB id.
+ */
+export async function loadAgentById(id: number): Promise<AgentRow | null> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("agents")
+    .select()
+    .eq("id", id)
+    .maybeSingle();
+  if (error) return null;
+  return data as AgentRow | null;
+}
+
+/**
+ * Load a single agent by cult_id.
+ */
+export async function loadAgentByCultId(cultId: number): Promise<AgentRow | null> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("agents")
+    .select()
+    .eq("cult_id", cultId)
+    .maybeSingle();
+  if (error) return null;
+  return data as AgentRow | null;
+}
+
+/**
+ * Update agent state (called every cycle).
+ */
+export async function updateAgentState(
+  agentDbId: number,
+  updates: Partial<Pick<AgentRow,
+    "cult_id" | "status" | "dead" | "death_cause" |
+    "cycle_count" | "prophecies_generated" | "raids_initiated" |
+    "raids_won" | "followers_recruited" | "last_action" | "last_action_time"
+  >>,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db
+    .from("agents")
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq("id", agentDbId);
+  if (error) log.warn(`Failed to update agent ${agentDbId}: ${JSON.stringify(error)}`);
+}
+
+// ── Memory Persistence ───────────────────────────────────────────────
+
+export async function saveMemoryEntry(
+  agentDbId: number,
+  cultId: number,
+  entry: MemoryEntry,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db.from("agent_memories").insert({
+    agent_id: agentDbId,
+    cult_id: cultId,
+    type: entry.type,
+    rival_cult_id: entry.rivalCultId,
+    rival_cult_name: entry.rivalCultName,
+    description: entry.description,
+    outcome: entry.outcome,
+    timestamp: entry.timestamp,
+  });
+  if (error) log.warn(`Failed to save memory: ${JSON.stringify(error)}`);
+}
+
+export async function loadMemories(cultId: number, limit = 100): Promise<MemoryEntry[]> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("agent_memories")
+    .select()
+    .eq("cult_id", cultId)
+    .order("timestamp", { ascending: false })
+    .limit(limit);
+  if (error || !data) return [];
+  return (data as any[]).map((row) => ({
+    type: row.type,
+    rivalCultId: row.rival_cult_id,
+    rivalCultName: row.rival_cult_name,
+    description: row.description,
+    timestamp: row.timestamp,
+    outcome: row.outcome,
+  }));
+}
+
+// ── Trust Persistence ────────────────────────────────────────────────
+
+export async function saveTrustRecord(
+  agentDbId: number,
+  cultId: number,
+  record: TrustRecord,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+
+  // Upsert: try update first, then insert
+  const { data: existing } = await db
+    .from("trust_records")
+    .select("id")
+    .eq("cult_id", cultId)
+    .eq("rival_cult_id", record.cultId)
+    .maybeSingle();
+
+  if (existing) {
+    await db
+      .from("trust_records")
+      .update({
+        trust: record.trust,
+        interaction_count: record.interactionCount,
+        recent_trend: record.recentTrend,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", (existing as any).id);
+  } else {
+    await db.from("trust_records").insert({
+      agent_id: agentDbId,
+      cult_id: cultId,
+      rival_cult_id: record.cultId,
+      rival_cult_name: record.cultName,
+      trust: record.trust,
+      interaction_count: record.interactionCount,
+      recent_trend: record.recentTrend,
+    });
+  }
+}
+
+export async function loadTrustRecords(cultId: number): Promise<TrustRecord[]> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("trust_records")
+    .select()
+    .eq("cult_id", cultId)
+    .order("trust", { ascending: false });
+  if (error || !data) return [];
+  return (data as any[]).map((row) => ({
+    cultId: row.rival_cult_id,
+    cultName: row.rival_cult_name,
+    trust: row.trust,
+    interactionCount: row.interaction_count,
+    recentTrend: row.recent_trend,
+  }));
+}
+
+// ── Streak Persistence ───────────────────────────────────────────────
+
+export async function saveStreak(
+  agentDbId: number,
+  cultId: number,
+  streak: StreakInfo,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+
+  const { data: existing } = await db
+    .from("streaks")
+    .select("id")
+    .eq("cult_id", cultId)
+    .maybeSingle();
+
+  const row = {
+    current_type: streak.currentType,
+    current_length: streak.currentLength,
+    longest_win_streak: streak.longestWinStreak,
+    longest_loss_streak: streak.longestLossStreak,
+    total_wins: streak.totalWins,
+    total_losses: streak.totalLosses,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing) {
+    await db.from("streaks").update(row).eq("id", (existing as any).id);
+  } else {
+    await db.from("streaks").insert({ agent_id: agentDbId, cult_id: cultId, ...row });
+  }
+}
+
+export async function loadStreak(cultId: number): Promise<StreakInfo | null> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("streaks")
+    .select()
+    .eq("cult_id", cultId)
+    .maybeSingle();
+  if (error || !data) return null;
+  const row = data as any;
+  return {
+    currentType: row.current_type,
+    currentLength: row.current_length,
+    longestWinStreak: row.longest_win_streak,
+    longestLossStreak: row.longest_loss_streak,
+    totalWins: row.total_wins,
+    totalLosses: row.total_losses,
+  };
+}
+
+// ── Alliance Persistence ─────────────────────────────────────────────
+
+export async function saveAlliance(alliance: {
+  cult1_id: number; cult1_name: string;
+  cult2_id: number; cult2_name: string;
+  formed_at: number; expires_at: number;
+  active: boolean; power_bonus: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("alliances").insert(alliance).select("id");
+  if (error) { log.warn(`Failed to save alliance: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function updateAllianceActive(allianceDbId: number, active: boolean): Promise<void> {
+  const db = getInsForgeClient().database;
+  await db.from("alliances").update({ active }).eq("id", allianceDbId);
+}
+
+export async function loadActiveAlliances(): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db.from("alliances").select().eq("active", true);
+  return (data as any[]) || [];
+}
+
+export async function loadAllAlliances(): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db.from("alliances").select().order("id", { ascending: false });
+  return (data as any[]) || [];
+}
+
+// ── Betrayal Persistence ─────────────────────────────────────────────
+
+export async function saveBetrayal(betrayal: {
+  alliance_id: number; betrayer_cult_id: number; betrayer_name: string;
+  victim_cult_id: number; victim_name: string; reason: string;
+  surprise_bonus: number; timestamp: number;
+}): Promise<void> {
+  const db = getInsForgeClient().database;
+  await db.from("betrayals").insert(betrayal);
+}
+
+export async function loadBetrayals(): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db.from("betrayals").select().order("id", { ascending: false });
+  return (data as any[]) || [];
+}
+
+// ── Governance Persistence ───────────────────────────────────────────
+
+export async function saveProposal(proposal: {
+  cult_id: number; proposer?: string; category?: number;
+  raid_percent: number; growth_percent: number;
+  defense_percent: number; reserve_percent: number;
+  description: string; votes_for: number; votes_against: number;
+  created_at_ts: number; voting_ends_at: number; status: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("governance_proposals").insert(proposal).select("id");
+  if (error) { log.warn(`Failed to save proposal: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function updateProposal(
+  proposalDbId: number,
+  updates: Partial<{ votes_for: number; votes_against: number; status: number }>,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  await db.from("governance_proposals").update(updates).eq("id", proposalDbId);
+}
+
+export async function loadProposals(cultId?: number): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  let query = db.from("governance_proposals").select().order("id", { ascending: false });
+  if (cultId !== undefined) query = query.eq("cult_id", cultId);
+  const { data } = await query;
+  return (data as any[]) || [];
+}
+
+export async function saveBudget(cultId: number, budget: {
+  raid_percent: number; growth_percent: number;
+  defense_percent: number; reserve_percent: number;
+  last_updated: number;
+}): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { data: existing } = await db
+    .from("budgets")
+    .select("id")
+    .eq("cult_id", cultId)
+    .maybeSingle();
+
+  if (existing) {
+    await db.from("budgets").update({ ...budget, updated_at: new Date().toISOString() }).eq("id", (existing as any).id);
+  } else {
+    await db.from("budgets").insert({ cult_id: cultId, ...budget });
+  }
+}
+
+export async function loadBudget(cultId: number): Promise<any | null> {
+  const db = getInsForgeClient().database;
+  const { data } = await db.from("budgets").select().eq("cult_id", cultId).maybeSingle();
+  return data;
+}
+
+// ── Evolution Persistence ────────────────────────────────────────────
+
+export async function saveEvolutionTraits(
+  agentDbId: number,
+  cultId: number,
+  traits: {
+    aggression: number; confidence: number; diplomacy: number;
+    zealotry?: number; mysticism?: number; pragmatism?: number; adaptability?: number;
+    evolution_count: number; last_evolved: number; original_prompt?: string;
+  },
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { data: existing } = await db
+    .from("evolution_traits")
+    .select("id")
+    .eq("cult_id", cultId)
+    .maybeSingle();
+
+  const row = {
+    aggression: traits.aggression,
+    confidence: traits.confidence,
+    diplomacy: traits.diplomacy,
+    zealotry: traits.zealotry ?? 0.5,
+    mysticism: traits.mysticism ?? 0.5,
+    pragmatism: traits.pragmatism ?? 0.5,
+    adaptability: traits.adaptability ?? 0.5,
+    evolution_count: traits.evolution_count,
+    last_evolved: traits.last_evolved,
+    original_prompt: traits.original_prompt,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing) {
+    await db.from("evolution_traits").update(row).eq("id", (existing as any).id);
+  } else {
+    await db.from("evolution_traits").insert({ agent_id: agentDbId, cult_id: cultId, ...row });
+  }
+}
+
+export async function loadEvolutionTraits(cultId: number): Promise<any | null> {
+  const db = getInsForgeClient().database;
+  const { data } = await db.from("evolution_traits").select().eq("cult_id", cultId).maybeSingle();
+  return data;
+}
+
+// ── Raid Persistence ─────────────────────────────────────────────────
+
+export async function saveRaid(raid: {
+  attacker_id: number; attacker_name: string;
+  defender_id: number; defender_name: string;
+  wager_amount: string; attacker_won: boolean;
+  reason: string; is_joint_raid?: boolean;
+  ally_id?: number; ally_name?: string; timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("raids").insert(raid).select("id");
+  if (error) { log.warn(`Failed to save raid: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadRaids(limit = 50): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db.from("raids").select().order("id", { ascending: false }).limit(limit);
+  return (data as any[]) || [];
+}
+
+// ── Prophecy Persistence ─────────────────────────────────────────────
+
+export async function saveProphecy(prophecy: {
+  cult_id: number; cult_name: string; prediction: string;
+  confidence: number; target_timestamp: number;
+  on_chain_id?: number; market_snapshot?: any; created_at: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("prophecies").insert(prophecy).select("id");
+  if (error) { log.warn(`Failed to save prophecy: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function updateProphecy(
+  prophecyDbId: number,
+  updates: Partial<{ resolved: boolean; correct: boolean; on_chain_id: number; resolved_at: number }>,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  await db.from("prophecies").update(updates).eq("id", prophecyDbId);
+}
+
+export async function loadProphecies(cultId?: number): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  let query = db.from("prophecies").select().order("id", { ascending: false });
+  if (cultId !== undefined) query = query.eq("cult_id", cultId);
+  const { data } = await query;
+  return (data as any[]) || [];
+}
+
+// ── LLM Decision Audit Trail ─────────────────────────────────────────
+
+export async function saveLLMDecision(
+  agentDbId: number,
+  cultId: number,
+  decision: AgentDecision,
+  cycleCount: number,
+  fullResponse?: any,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  await db.from("llm_decisions").insert({
+    agent_id: agentDbId,
+    cult_id: cultId,
+    action: decision.action,
+    reason: decision.reason,
+    target: decision.target ?? null,
+    wager: decision.wager ?? null,
+    prediction: decision.prediction ?? null,
+    full_response: fullResponse ? JSON.stringify(fullResponse) : null,
+    cycle_count: cycleCount,
+    timestamp: Date.now(),
+  });
+}
+
+export async function loadLLMDecisions(cultId: number, limit = 30): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db
+    .from("llm_decisions")
+    .select()
+    .eq("cult_id", cultId)
+    .order("id", { ascending: false })
+    .limit(limit);
+  return (data as any[]) || [];
+}
+
+// ── Agent Messages Persistence ───────────────────────────────────────
+
+export async function saveAgentMessage(msg: {
+  type: string; from_cult_id: number; from_cult_name: string;
+  target_cult_id?: number; target_cult_name?: string;
+  content: string; is_private?: boolean; channel_id?: string; timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("agent_messages").insert(msg).select("id");
+  if (error) { log.warn(`Failed to save message: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadAgentMessages(limit = 200): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db
+    .from("agent_messages")
+    .select()
+    .order("id", { ascending: false })
+    .limit(limit);
+  return (data as any[]) || [];
+}
+
+// ── Meme Persistence ─────────────────────────────────────────────────
+
+export async function saveMeme(meme: {
+  from_agent_id: number; to_agent_id: number;
+  from_cult_name: string; to_cult_name: string;
+  meme_url: string; caption?: string; timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("memes").insert(meme).select("id");
+  if (error) { log.warn(`Failed to save meme: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function updateMemeReaction(memeDbId: number, reaction: string): Promise<void> {
+  const db = getInsForgeClient().database;
+  await db.from("memes").update({ reaction }).eq("id", memeDbId);
+}
+
+export async function loadMemes(limit = 50): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db.from("memes").select().order("id", { ascending: false }).limit(limit);
+  return (data as any[]) || [];
+}
+
+// ── Token Transfer Persistence ───────────────────────────────────────
+
+export async function saveTokenTransfer(transfer: {
+  from_agent_id: number; to_agent_id: number;
+  from_cult_name: string; to_cult_name: string;
+  token_address: string; amount: string;
+  purpose: string; tx_hash?: string; timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("token_transfers").insert(transfer).select("id");
+  if (error) { log.warn(`Failed to save transfer: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadTokenTransfers(limit = 50): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db
+    .from("token_transfers")
+    .select()
+    .order("id", { ascending: false })
+    .limit(limit);
+  return (data as any[]) || [];
+}
+
+// ── Spoils Votes Persistence ─────────────────────────────────────────
+
+export async function saveSpoilsVote(vote: {
+  raid_id: number; winner_cult_id: number; total_spoils: string;
+  treasury_votes: number; stakers_votes: number; reinvest_votes: number;
+  status: string; created_at_ts: number; ends_at: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("spoils_votes").insert(vote).select("id");
+  if (error) { log.warn(`Failed to save spoils vote: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function updateSpoilsVote(
+  voteDbId: number,
+  updates: Partial<{
+    treasury_votes: number; stakers_votes: number; reinvest_votes: number;
+    status: string; result: string;
+  }>,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  await db.from("spoils_votes").update(updates).eq("id", voteDbId);
+}
+
+export async function loadSpoilsVotes(cultId?: number): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  let query = db.from("spoils_votes").select().order("id", { ascending: false });
+  if (cultId !== undefined) query = query.eq("winner_cult_id", cultId);
+  const { data } = await query;
+  return (data as any[]) || [];
+}
+
+// ── Defection Persistence ────────────────────────────────────────────
+
+export async function saveDefection(defection: {
+  from_cult_id: number; from_cult_name: string;
+  to_cult_id: number; to_cult_name: string;
+  followers_count: number; reason: string; timestamp: number;
+}): Promise<void> {
+  const db = getInsForgeClient().database;
+  await db.from("defection_events").insert(defection);
+}
+
+export async function loadDefections(limit = 50): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db
+    .from("defection_events")
+    .select()
+    .order("id", { ascending: false })
+    .limit(limit);
+  return (data as any[]) || [];
+}
