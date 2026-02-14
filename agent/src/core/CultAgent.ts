@@ -298,14 +298,18 @@ export class CultAgent {
       this.personality.systemPrompt,
     );
 
-    // Record on-chain via transaction queue with retry
+    // Hash the prediction text — only the hash goes on-chain for gas savings.
+    // Full text is stored in InsForge DB by ProphecyService.
+    const predictionHash = ethers.keccak256(ethers.toUtf8Bytes(prophecy.prediction));
+
+    // Record hash on-chain via transaction queue with retry
     try {
       const onChainId = await this.txQueue.enqueue(
         `prophecy-${prophecy.id}`,
         () =>
           this.contractService.createProphecy(
             this.cultId,
-            prophecy.prediction,
+            predictionHash,
             Math.floor(prophecy.targetTimestamp / 1000),
           ),
       );
@@ -464,9 +468,15 @@ export class CultAgent {
         },
       );
 
-      // Auto-vote for own proposal with weight based on followers
+      // Auto-vote for own proposal with weight based on followers.
+      // Pass wallet address so the vote can be batched on-chain later.
       const weight = Math.max(1, cultState.followerCount);
-      await this.governanceService.voteOnProposal(proposal.id, true, weight);
+      await this.governanceService.voteOnProposal(
+        proposal.id,
+        true,
+        weight,
+        this.contractService.address,
+      );
 
       this.state.lastAction = `governance: proposed R${proposal.raidPercent}/G${proposal.growthPercent}/D${proposal.defensePercent}/Re${proposal.reservePercent}`;
       this.log.info(`Governance action: ${this.state.lastAction}`);

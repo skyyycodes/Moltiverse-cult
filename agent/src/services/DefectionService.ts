@@ -1,3 +1,4 @@
+import { ethers } from "ethers";
 import { CultData } from "../chain/ContractService.js";
 import { ContractService } from "../chain/ContractService.js";
 import { MemoryService } from "./MemoryService.js";
@@ -172,15 +173,18 @@ export class DefectionService {
 
     /**
      * Record defection on-chain for permanent history.
+     * Only the keccak256 hash of the reason goes on-chain to save gas.
+     * Full reason text is persisted in InsForge DB by saveDefection().
      */
     private async recordOnChain(event: DefectionEvent): Promise<void> {
         if (!this.contractService) return;
         try {
+            const reasonHash = ethers.keccak256(ethers.toUtf8Bytes(event.reason));
             await this.contractService.recordDefection(
                 event.fromCultId,
                 event.toCultId,
                 event.followersLost,
-                event.reason,
+                reasonHash,
             );
             log.info(`On-chain defection recorded: ${event.followersLost} from cult ${event.fromCultId} → ${event.toCultId}`);
         } catch (err: any) {

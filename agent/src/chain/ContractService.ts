@@ -124,15 +124,15 @@ export class ContractService {
 
   async createProphecy(
     cultId: number,
-    prediction: string,
+    predictionHash: string,
     targetTimestamp: number,
   ): Promise<number> {
     log.info(
-      `Creating prophecy for cult ${cultId}: ${prediction.slice(0, 50)}...`,
+      `Creating prophecy for cult ${cultId} (hash: ${predictionHash.slice(0, 18)}...)`,
     );
     const tx = await this.registry.createProphecy(
       cultId,
-      prediction,
+      predictionHash,
       targetTimestamp,
     );
     const receipt = await tx.wait();
@@ -206,12 +206,13 @@ export class ContractService {
 
   /**
    * Record a defection on-chain — followers switching from one cult to another.
+   * Reason text is stored off-chain; only the hash goes on-chain for gas savings.
    */
   async recordDefection(
     fromCultId: number,
     toCultId: number,
     count: number,
-    reason: string,
+    reasonHash: string,
   ): Promise<void> {
     log.info(
       `Recording defection: ${count} followers from cult ${fromCultId} → ${toCultId}`,
@@ -221,7 +222,7 @@ export class ContractService {
         fromCultId,
         toCultId,
         count,
-        reason,
+        reasonHash,
       );
       await tx.wait();
       log.info("Defection recorded on-chain");

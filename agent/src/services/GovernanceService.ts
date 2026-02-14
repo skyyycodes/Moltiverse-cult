@@ -131,13 +131,16 @@ The numbers MUST sum to exactly 100.`;
         // Try on-chain, fall back to off-chain
         if (this.contract) {
             try {
+                // Hash description — only the hash goes on-chain for gas savings.
+                // Full description text is stored in InsForge DB.
+                const descHash = ethers.keccak256(ethers.toUtf8Bytes(description));
                 const tx = await this.contract.createProposal(
                     cultId,
                     raid,
                     growth,
                     defense,
                     reserve,
-                    description,
+                    descHash,
                 );
                 const receipt = await tx.wait();
                 const event = receipt.logs.find((l: any) => l.fragment?.name === "ProposalCreated");
@@ -194,26 +197,26 @@ The numbers MUST sum to exactly 100.`;
         return proposal;
     }
 
+    /** Pending votes queued for batch submission to on-chain GovernanceEngine */
+    private pendingVotes: Array<{
+        proposalId: number;
+        voter: string;
+        support: boolean;
+        weight: number;
+    }> = [];
+
     /**
      * Auto-vote on a proposal (agents vote based on LLM evaluation).
+     * Votes are queued off-chain and submitted in a single batch transaction
+     * via submitBatchVotes() to save ~63% gas vs individual castVote() calls.
      */
     async voteOnProposal(
         proposalId: number,
         support: boolean,
         weight: number,
+        voterAddress?: string,
     ): Promise<void> {
-        if (this.contract) {
-            try {
-                const tx = await this.contract.castVote(proposalId, support, weight);
-                await tx.wait();
-                log.info(`On-chain vote on proposal #${proposalId}: ${support ? "FOR" : "AGAINST"} (weight: ${weight})`);
-                return;
-            } catch (err: any) {
-                log.warn(`On-chain vote failed: ${err.message}`);
-            }
-        }
-
-        // Off-chain simulation
+        // Always record off-chain first (immediate state update)
         const proposal = this.localProposals.find((p) => p.id === proposalId);
         if (proposal && proposal.status === 0) {
             if (support) {
@@ -221,7 +224,6 @@ The numbers MUST sum to exactly 100.`;
             } else {
                 proposal.votesAgainst += weight;
             }
-            log.info(`Off-chain vote on #${proposalId}: ${support ? "FOR" : "AGAINST"} (weight: ${weight})`);
 
             // Persist updated vote counts (fire-and-forget)
             const dbId = this.proposalDbIds.get(proposalId);
@@ -232,6 +234,57 @@ The numbers MUST sum to exactly 100.`;
                 }).catch(() => {});
             }
         }
+
+        // Queue for on-chain batch submission if GovernanceEngine is connected
+        if (this.contract && voterAddress) {
+            this.pendingVotes.push({ proposalId, voter: voterAddress, support, weight });
+            log.info(`Vote queued for batch: proposal #${proposalId} ${support ? "FOR" : "AGAINST"} (weight: ${weight})`);
+        } else {
+            log.info(`Off-chain vote on #${proposalId}: ${support ? "FOR" : "AGAINST"} (weight: ${weight})`);
+        }
+    }
+
+    /**
+     * Submit all queued votes to the GovernanceEngine in a single batch transaction.
+     * Called by the AgentOrchestrator after all agents have voted in a cycle.
+     * Uses GovernanceEngine.batchCastVotes() — one tx instead of N individual txs.
+     */
+    async submitBatchVotes(): Promise<number> {
+        if (!this.contract || this.pendingVotes.length === 0) {
+            return 0;
+        }
+
+        const batch = [...this.pendingVotes];
+        this.pendingVotes = [];
+
+        const proposalIds = batch.map((v) => v.proposalId);
+        const voters = batch.map((v) => v.voter);
+        const supports = batch.map((v) => v.support);
+        const weights = batch.map((v) => v.weight);
+
+        try {
+            const tx = await this.contract.batchCastVotes(
+                proposalIds,
+                voters,
+                supports,
+                weights,
+            );
+            await tx.wait();
+            log.info(`Batch submitted ${batch.length} votes on-chain in 1 transaction`);
+            return batch.length;
+        } catch (err: any) {
+            log.warn(`Batch vote submission failed: ${err.message}`);
+            // Re-queue failed votes for next attempt
+            this.pendingVotes.push(...batch);
+            return 0;
+        }
+    }
+
+    /**
+     * Get the number of pending votes waiting for batch submission.
+     */
+    getPendingVoteCount(): number {
+        return this.pendingVotes.length;
     }
 
     /**

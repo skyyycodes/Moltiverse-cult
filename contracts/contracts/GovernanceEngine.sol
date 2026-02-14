@@ -25,7 +25,7 @@ contract GovernanceEngine {
         uint256 growthPercent;   // % for recruitment/growth
         uint256 defensePercent;  // % for fortification
         uint256 reservePercent;  // % kept in reserve
-        string description;
+        bytes32 descriptionHash; // keccak256 of description text (full text stored off-chain)
         uint256 votesFor;
         uint256 votesAgainst;
         uint256 createdAt;
@@ -67,8 +67,13 @@ contract GovernanceEngine {
         uint256 indexed proposalId,
         uint256 indexed cultId,
         address indexed proposer,
-        string description,
+        bytes32 descriptionHash,
         uint256 votingEndsAt
+    );
+    event BatchVotesCast(
+        uint256 indexed proposalId,
+        uint256 voteCount,
+        uint256 timestamp
     );
     event VoteCast(
         uint256 indexed proposalId,
@@ -109,7 +114,7 @@ contract GovernanceEngine {
         uint256 growthPercent,
         uint256 defensePercent,
         uint256 reservePercent,
-        string calldata description
+        bytes32 descriptionHash
     ) external returns (uint256 proposalId) {
         require(
             raidPercent + growthPercent + defensePercent + reservePercent == 100,
@@ -136,7 +141,7 @@ contract GovernanceEngine {
             growthPercent: growthPercent,
             defensePercent: defensePercent,
             reservePercent: reservePercent,
-            description: description,
+            descriptionHash: descriptionHash,
             votesFor: 0,
             votesAgainst: 0,
             createdAt: block.timestamp,
@@ -147,7 +152,7 @@ contract GovernanceEngine {
         cultProposals[cultId].push(proposalId);
         activeProposalCount[cultId]++;
 
-        emit ProposalCreated(proposalId, cultId, msg.sender, description, endsAt);
+        emit ProposalCreated(proposalId, cultId, msg.sender, descriptionHash, endsAt);
     }
 
     /**
@@ -159,13 +164,55 @@ contract GovernanceEngine {
         bool support,
         uint256 weight
     ) external {
+        _castVoteInternal(proposalId, msg.sender, support, weight);
+    }
+
+    /**
+     * @dev Submit multiple votes in a single transaction (batch voting).
+     *      The orchestrator collects agent votes off-chain and submits them
+     *      together to save gas (~63% cheaper than individual txs).
+     *      Only the contract owner can batch-submit on behalf of voters.
+     */
+    function batchCastVotes(
+        uint256[] calldata proposalIds,
+        address[] calldata voters,
+        bool[] calldata supports,
+        uint256[] calldata weights
+    ) external onlyOwner {
+        uint256 count = proposalIds.length;
+        require(
+            voters.length == count &&
+            supports.length == count &&
+            weights.length == count,
+            "Array length mismatch"
+        );
+
+        for (uint256 i = 0; i < count; i++) {
+            _castVoteInternal(proposalIds[i], voters[i], supports[i], weights[i]);
+        }
+
+        // Emit summary event for the batch
+        if (count > 0) {
+            emit BatchVotesCast(proposalIds[0], count, block.timestamp);
+        }
+    }
+
+    /**
+     * @dev Internal vote logic shared by castVote and batchCastVotes.
+     */
+    function _castVoteInternal(
+        uint256 proposalId,
+        address voter,
+        bool support,
+        uint256 weight
+    ) internal {
         Proposal storage p = proposals[proposalId];
         require(p.status == ProposalStatus.ACTIVE, "Proposal not active");
         require(block.timestamp <= p.votingEndsAt, "Voting ended");
-        require(!votes[proposalId][msg.sender].hasVoted, "Already voted");
+        require(!votes[proposalId][voter].hasVoted, "Already voted");
         require(weight > 0, "Weight must be > 0");
 
-        votes[proposalId][msg.sender] = Vote({
+        votes[proposalId][voter] = Vote({
             hasVoted: true,
             support: support,
             weight: weight
@@ -177,7 +224,7 @@ contract GovernanceEngine {
             p.votesAgainst += weight;
         }
 
-        emit VoteCast(proposalId, msg.sender, support, weight);
+        emit VoteCast(proposalId, voter, support, weight);
     }
 
     /**

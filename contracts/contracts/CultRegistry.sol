@@ -18,7 +18,7 @@ contract CultRegistry {
 
     struct Prophecy {
         uint256 cultId;
-        string prediction;
+        bytes32 predictionHash;  // keccak256 of prediction text (full text stored off-chain)
         uint256 createdAt;
         uint256 targetTimestamp;
         bool resolved;
@@ -56,7 +56,7 @@ contract CultRegistry {
     event ProphecyCreated(
         uint256 indexed prophecyId,
         uint256 indexed cultId,
-        string prediction,
+        bytes32 predictionHash,
         uint256 targetTimestamp
     );
     event ProphecyResolved(
@@ -157,19 +157,19 @@ contract CultRegistry {
 
     function createProphecy(
         uint256 cultId,
-        string calldata prediction,
+        bytes32 predictionHash,
         uint256 targetTimestamp
     ) external onlyLeaderOrOwner(cultId) returns (uint256 prophecyId) {
         prophecyId = nextProphecyId++;
         prophecies[prophecyId] = Prophecy({
             cultId: cultId,
-            prediction: prediction,
+            predictionHash: predictionHash,
             createdAt: block.timestamp,
             targetTimestamp: targetTimestamp,
             resolved: false,
             correct: false
         });
-        emit ProphecyCreated(prophecyId, cultId, prediction, targetTimestamp);
+        emit ProphecyCreated(prophecyId, cultId, predictionHash, targetTimestamp);
     }
 
     function resolveProphecy(
@@ -327,7 +327,7 @@ contract CultRegistry {
         uint256 fromCultId;
         uint256 toCultId;
         uint256 followersDefected;
-        string reason;
+        bytes32 reasonHash;     // keccak256 of reason text (full text stored off-chain)
         uint256 timestamp;
     }
 
@@ -340,7 +340,7 @@ contract CultRegistry {
         uint256 indexed fromCultId,
         uint256 indexed toCultId,
         uint256 followersDefected,
-        string reason,
+        bytes32 reasonHash,
         uint256 timestamp
     );
 
@@ -349,13 +349,13 @@ contract CultRegistry {
      * @param fromCultId The cult losing followers
      * @param toCultId The cult gaining followers
      * @param count Number of followers defecting
-     * @param reason The reason for defection
+     * @param reasonHash keccak256 hash of the defection reason (full text stored off-chain)
      */
     function recordDefection(
         uint256 fromCultId,
         uint256 toCultId,
         uint256 count,
-        string calldata reason
+        bytes32 reasonHash
     ) external onlyOwner {
         require(cults[fromCultId].active, "Source cult not active");
         require(cults[toCultId].active, "Target cult not active");
@@ -374,14 +374,14 @@ contract CultRegistry {
             fromCultId: fromCultId,
             toCultId: toCultId,
             followersDefected: count,
-            reason: reason,
+            reasonHash: reasonHash,
             timestamp: block.timestamp
         });
 
         totalDefectionsFrom[fromCultId] += count;
         totalDefectionsTo[toCultId] += count;
 
-        emit FollowerDefected(fromCultId, toCultId, count, reason, block.timestamp);
+        emit FollowerDefected(fromCultId, toCultId, count, reasonHash, block.timestamp);
     }
 
     function getDefection(uint256 defId) external view returns (DefectionRecord memory) {
