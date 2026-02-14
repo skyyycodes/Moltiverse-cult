@@ -179,7 +179,13 @@ export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
   });
 
   app.listen(port, () => {
-    log.info(`API server running on http://localhost:${port}`);
+    log.section("API Server Online");
+    log.table("Server Config", {
+      url: `http://localhost:${port}`,
+      health: `http://localhost:${port}/api/health`,
+      routes: "cults, prophecies, raids, governance, alliances, agents, chat",
+      sse: `http://localhost:${port}/api/events`,
+    });
   });
 
   return app;

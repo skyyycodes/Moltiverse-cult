@@ -1,8 +1,8 @@
 import { ethers } from "ethers";
 import { config } from "../config.js";
-import { ContractService, CultData } from "../chain/ContractService.js";
+import { ContractService, type CultData } from "../chain/ContractService.js";
 import { TransactionQueue } from "../chain/TransactionQueue.js";
-import { LLMService } from "../services/LLMService.js";
+import { LLMService, AgentDecision } from "../services/LLMService.js";
 import { ProphecyService, Prophecy } from "../services/ProphecyService.js";
 import { RaidService, RaidEvent } from "../services/RaidService.js";
 import {
@@ -130,13 +130,28 @@ export class CultAgent {
     if (this.running) return;
     this.running = true;
     this.state.running = true;
-    this.log.info("Agent loop started");
+    this.log.ok(`Agent loop started (interval: ${config.agentLoopInterval / 1000}s ± ${config.agentLoopJitter / 1000}s)`);
+
+    let consecutiveErrors = 0;
 
     while (this.running) {
       try {
         await this.tick();
+        consecutiveErrors = 0; // reset on success
       } catch (error: any) {
-        this.log.error(`Tick error: ${error.message}`);
+        consecutiveErrors++;
+        this.log.errorWithContext(
+          `Tick crashed (${consecutiveErrors} consecutive error${consecutiveErrors > 1 ? "s" : ""})`,
+          error,
+          { cycle: this.state.cycleCount, agent: this.personality.name },
+        );
+
+        // Back off if repeatedly failing
+        if (consecutiveErrors >= 5) {
+          const backoff = Math.min(consecutiveErrors * 10_000, 120_000);
+          this.log.warn(`Too many errors — backing off for ${backoff / 1000}s`);
+          await randomDelay(backoff, 5_000);
+        }
       }
       await randomDelay(config.agentLoopInterval, config.agentLoopJitter);
     }
@@ -150,47 +165,68 @@ export class CultAgent {
 
   private async tick(): Promise<void> {
     this.state.cycleCount++;
-    this.log.info(`--- Cycle ${this.state.cycleCount} ---`);
+    const tickTimer = this.log.timer(`Cycle #${this.state.cycleCount} completed`);
+    this.log.section(`${this.personality.name} — Cycle #${this.state.cycleCount}`);
 
-    // Check if dead and waiting for rebirth
+    // ── Check death / rebirth ──────────────────────────────────────
     if (this.state.dead) {
       if (this.lifeDeathService.canRebirth(this.cultId)) {
-        this.log.info("Rebirth cooldown expired — cult may rise again!");
+        this.log.ok("🔥 Rebirth cooldown expired — cult rises again!");
         this.state.dead = false;
         this.state.deathCause = null;
         this.state.lastAction = "reborn from the ashes";
         this.lifeDeathService.recordRebirth(
           this.cultId,
           this.personality.name,
-          this.personality.name, // same name for now
+          this.personality.name,
         );
       } else {
-        const remaining = this.lifeDeathService.getRebirthCooldownRemaining(
-          this.cultId,
-        );
-        this.log.info(
-          `💀 Cult is dead. Rebirth in ${Math.ceil(remaining / 1000)}s`,
-        );
-        this.state.lastAction = `dead — rebirth in ${Math.ceil(remaining / 1000)}s`;
+        const remaining = this.lifeDeathService.getRebirthCooldownRemaining(this.cultId);
+        const secs = Math.ceil(remaining / 1000);
+        this.log.info(`💀 Cult is dead — rebirth in ${secs}s`);
+        this.state.lastAction = `dead — rebirth in ${secs}s`;
         return;
       }
     }
 
-    // Phase 1: Observe
-    const [cultState, allCults, marketData] = await Promise.all([
-      this.contractService.getCult(this.cultId).catch(() => null),
-      this.contractService.getAllCults().catch(() => []),
-      this.market.getMarketData(),
-    ]);
+    // ── Phase 1: Observe ───────────────────────────────────────────
+    this.log.info("👁 Phase 1: Observing on-chain state...");
+    const observeTimer = this.log.timer("Phase 1 (Observe)");
+
+    let cultState: CultData | null = null;
+    let allCults: CultData[] = [];
+    let marketData: { trend: string; summary: string };
+
+    try {
+      [cultState, allCults, marketData] = await Promise.all([
+        this.contractService.getCult(this.cultId).catch((err) => {
+          this.log.warn(`Failed to fetch own cult state: ${err.message}`);
+          return null;
+        }),
+        this.contractService.getAllCults().catch((err) => {
+          this.log.warn(`Failed to fetch all cults: ${err.message}`);
+          return [];
+        }),
+        this.market.getMarketData(),
+      ]);
+    } catch (err: any) {
+      this.log.errorWithContext("Phase 1 failed — cannot observe state", err, {
+        cultId: this.cultId,
+        agent: this.personality.name,
+      });
+      return;
+    }
+    observeTimer();
 
     if (!cultState) {
-      this.log.warn("Could not fetch cult state, skipping cycle");
+      this.log.warn("⏭ Cult state unavailable — skipping cycle");
       return;
     }
 
     // Check death condition
     const deathEvent = this.lifeDeathService.checkDeathCondition(cultState);
     if (deathEvent) {
+      this.log.warn(`💀 DEATH EVENT: ${deathEvent.causeOfDeath}`);
       this.state.dead = true;
       this.state.deathCause = deathEvent.causeOfDeath;
       this.state.lastAction = `DIED: ${deathEvent.causeOfDeath}`;
@@ -198,8 +234,17 @@ export class CultAgent {
     }
 
     const rivals = allCults.filter((c) => c.id !== this.cultId && c.active);
+    this.log.table("Cult Status", {
+      treasury: `${ethers.formatEther(cultState.treasuryBalance)} MON`,
+      followers: cultState.followerCount,
+      raidRecord: `${cultState.raidWins}W / ${cultState.raidLosses}L`,
+      rivals: rivals.length,
+    });
 
-    // Phase 2: Think - ask LLM what to do (with memory context + evolution)
+    // ── Phase 2: Think ──────────────────────────────────────────────
+    this.log.info("🧠 Phase 2: Thinking (LLM decision)...");
+    const thinkTimer = this.log.timer("Phase 2 (Think)");
+
     const memorySnapshot = this.memoryService.getSnapshot(this.cultId);
     const prophecyAccuracy = this.prophecyService.getAccuracyForCult(this.cultId);
     this.evolutionService.evolve(
@@ -209,76 +254,111 @@ export class CultAgent {
       this.memoryService,
       prophecyAccuracy,
     );
-    const decision = await this.llm.decideAction(
-      this.personality.systemPrompt,
-      this.personality.name,
-      {
-        ownTreasury: Number(ethers.formatEther(cultState.treasuryBalance)),
-        ownFollowers: cultState.followerCount,
-        ownRaidWins: cultState.raidWins,
-        rivals: rivals.map((r) => ({
-          id: r.id,
-          name: r.name,
-          treasury: Number(ethers.formatEther(r.treasuryBalance)),
-          followers: r.followerCount,
-          raidWins: r.raidWins,
-        })),
-        recentProphecies: this.propheciesThisCycle,
-        marketTrend: marketData.trend,
-        memoryContext: memorySnapshot.summary,
-      },
-      this.state.cycleCount,
-    );
 
-    this.log.info(`Decision: ${decision.action} - ${decision.reason}`);
-
-    // Phase 3: Act
-    switch (decision.action) {
-      case "prophecy":
-        await this.executeProphecy(cultState);
-        break;
-      case "recruit":
-        await this.executeRecruitment(cultState, rivals, decision.target);
-        break;
-      case "raid":
-        await this.executeRaid(cultState, rivals, decision);
-        break;
-      case "govern":
-        await this.executeGovernance(cultState);
-        break;
-      case "ally":
-        await this.executeAlliance(cultState, rivals, decision);
-        break;
-      case "betray":
-        await this.executeBetray(cultState, decision);
-        break;
-      case "coup":
-        await this.executeCoup(cultState);
-        break;
-      case "leak":
-        await this.executeLeak(cultState, rivals);
-        break;
-      case "meme":
-        await this.executeMeme(cultState, rivals, decision);
-        break;
-      case "bribe":
-        await this.executeBribe(cultState, rivals, decision);
-        break;
-      case "idle":
-        this.log.info("Meditating on the void...");
-        this.state.lastAction = "idle - " + decision.reason;
-        break;
+    let decision: AgentDecision;
+    try {
+      decision = await this.llm.decideAction(
+        this.personality.systemPrompt,
+        this.personality.name,
+        {
+          ownTreasury: Number(ethers.formatEther(cultState.treasuryBalance)),
+          ownFollowers: cultState.followerCount,
+          ownRaidWins: cultState.raidWins,
+          rivals: rivals.map((r) => ({
+            id: r.id,
+            name: r.name,
+            treasury: Number(ethers.formatEther(r.treasuryBalance)),
+            followers: r.followerCount,
+            raidWins: r.raidWins,
+          })),
+          recentProphecies: this.propheciesThisCycle,
+          marketTrend: marketData.trend,
+          memoryContext: memorySnapshot.summary,
+        },
+        this.state.cycleCount,
+      );
+    } catch (err: any) {
+      this.log.errorWithContext("LLM decision failed — defaulting to idle", err, {
+        agent: this.personality.name,
+        cycle: this.state.cycleCount,
+      });
+      decision = { action: "idle", reason: "LLM unavailable" };
     }
+    thinkTimer();
+
+    this.log.info(`🎯 Decision: ${decision.action.toUpperCase()} — ${decision.reason}`);
+
+    // ── Phase 3: Act ───────────────────────────────────────────────
+    this.log.info(`⚡ Phase 3: Executing → ${decision.action.toUpperCase()}`);
+    const actTimer = this.log.timer(`Phase 3 (${decision.action})`);
+
+    try {
+      switch (decision.action) {
+        case "prophecy":
+          await this.executeProphecy(cultState);
+          break;
+        case "recruit":
+          await this.executeRecruitment(cultState, rivals, decision.target);
+          break;
+        case "raid":
+          await this.executeRaid(cultState, rivals, decision);
+          break;
+        case "govern":
+          await this.executeGovernance(cultState);
+          break;
+        case "ally":
+          await this.executeAlliance(cultState, rivals, decision);
+          break;
+        case "betray":
+          await this.executeBetray(cultState, decision);
+          break;
+        case "coup":
+          await this.executeCoup(cultState);
+          break;
+        case "leak":
+          await this.executeLeak(cultState, rivals);
+          break;
+        case "meme":
+          await this.executeMeme(cultState, rivals, decision);
+          break;
+        case "bribe":
+          await this.executeBribe(cultState, rivals, decision);
+          break;
+        case "idle":
+          this.log.info("🧘 Meditating on the void...");
+          this.state.lastAction = "idle — " + decision.reason;
+          break;
+        default:
+          this.log.warn(`Unknown action: ${(decision as any).action} — skipping`);
+          this.state.lastAction = `unknown action: ${(decision as any).action}`;
+      }
+    } catch (err: any) {
+      this.log.errorWithContext(
+        `Action '${decision.action}' threw an unhandled error`,
+        err,
+        { agent: this.personality.name, cycle: this.state.cycleCount, target: decision.target },
+      );
+      this.state.lastAction = `${decision.action}: crashed — ${err.message?.slice(0, 80)}`;
+    }
+    actTimer();
 
     this.state.lastActionTime = Date.now();
 
-    // Phase 4: Resolve old prophecies
-    await this.resolveOldProphecies();
+    // ── Phase 4: Resolve old prophecies ─────────────────────────────
+    try {
+      await this.resolveOldProphecies();
+    } catch (err: any) {
+      this.log.warn(`Prophecy resolution error (non-fatal): ${err.message}`);
+    }
 
-    // Phase 5: Governance - execute expired proposals
-    await this.governanceService.executeExpiredProposals(this.cultId);
+    // ── Phase 5: Governance — execute expired proposals ─────────────
+    try {
+      await this.governanceService.executeExpiredProposals(this.cultId);
+    } catch (err: any) {
+      this.log.warn(`Governance execution error (non-fatal): ${err.message}`);
+    }
 
-    // Phase 6: Persist agent state to InsForge DB (fire-and-forget)
+    // ── Phase 6: Persist to InsForge (fire-and-forget) ──────────────
     if (this.agentDbId > 0) {
       updateAgentState(this.agentDbId, {
         status: this.state.dead ? "dead" : "active",
@@ -291,22 +371,35 @@ export class CultAgent {
         followers_recruited: this.state.followersRecruited,
         last_action: this.state.lastAction,
         last_action_time: this.state.lastActionTime,
-      }).catch(() => {});
+      }).catch((err) => {
+        this.log.debug(`InsForge persist failed (non-fatal): ${err.message}`);
+      });
     }
+
+    tickTimer();
   }
 
   private async executeProphecy(cultState: CultData): Promise<void> {
-    const prophecy = await this.prophecyService.generateProphecy(
-      this.cultId,
-      this.personality.name,
-      this.personality.systemPrompt,
-    );
+    let prophecy;
+    try {
+      prophecy = await this.prophecyService.generateProphecy(
+        this.cultId,
+        this.personality.name,
+        this.personality.systemPrompt,
+      );
+    } catch (err: any) {
+      this.log.errorWithContext("Failed to generate prophecy", err, {
+        cultId: this.cultId,
+      });
+      this.state.lastAction = "prophecy: generation failed";
+      return;
+    }
+
+    this.log.info(`🔮 Prophecy: "${prophecy.prediction.slice(0, 60)}..."`);
 
     // Hash the prediction text — only the hash goes on-chain for gas savings.
-    // Full text is stored in InsForge DB by ProphecyService.
     const predictionHash = ethers.keccak256(ethers.toUtf8Bytes(prophecy.prediction));
 
-    // Record hash on-chain via transaction queue with retry
     try {
       const onChainId = await this.txQueue.enqueue(
         `prophecy-${prophecy.id}`,
@@ -318,16 +411,16 @@ export class CultAgent {
           ),
       );
       prophecy.onChainId = onChainId;
+      this.log.ok(`Prophecy recorded on-chain (id: ${onChainId})`);
     } catch (error: any) {
-      this.log.warn(`Failed to record prophecy on-chain: ${error.message}`);
+      this.log.errorWithContext("Failed to record prophecy on-chain", error, {
+        prophecyId: prophecy.id,
+      });
     }
 
     this.state.propheciesGenerated++;
     this.propheciesThisCycle++;
-    this.state.lastAction = `prophecy: "${prophecy.prediction.slice(
-      0,
-      50,
-    )}..."`;
+    this.state.lastAction = `prophecy: "${prophecy.prediction.slice(0, 50)}..."`;
   }
 
   private async executeRecruitment(
@@ -425,12 +518,24 @@ export class CultAgent {
           wagerAmount,
         ),
       );
+      this.log.ok(`Raid recorded on-chain (id: ${raid.id})`);
     } catch (error: any) {
-      this.log.warn(`Failed to record raid on-chain: ${error.message}`);
+      this.log.errorWithContext("Failed to record raid on-chain", error, {
+        raidId: raid.id,
+        attacker: raid.attackerName,
+        defender: raid.defenderName,
+      });
     }
 
     this.state.raidsInitiated++;
     if (raid.attackerWon) this.state.raidsWon++;
+
+    this.log.table(`⚔ Raid Result`, {
+      target: target.name,
+      outcome: raid.attackerWon ? "✅ WON" : "❌ LOST",
+      wager: `${ethers.formatEther(wagerAmount)} MON`,
+      joint: raid.isJointRaid ? `with ${raid.allyName}` : "solo",
+    });
 
     // Record raid in memory
     this.memoryService.recordRaid(

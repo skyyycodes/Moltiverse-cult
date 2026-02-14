@@ -7,15 +7,23 @@ import { createLogger } from "./utils/logger.js";
 const log = createLogger("Main");
 
 async function main() {
-  log.info("🏛️ AgentCult: Emergent Religious Economies");
-  log.info("============================================");
-  log.info(`Network: Monad (Chain ${config.chainId})`);
-  log.info(`RPC: ${config.rpcUrl}`);
-  log.info(`Registry: ${config.cultRegistryAddress}`);
+  log.section("🏩 AgentCult: Emergent Religious Economies");
+  log.table("Configuration", {
+    network: `Monad (chain ${config.chainId})`,
+    rpc: config.rpcUrl,
+    registry: config.cultRegistryAddress,
+    apiPort: config.apiPort,
+  });
 
   // Initialize the agent orchestrator first (loads agents from InsForge DB)
   const orchestrator = new AgentOrchestrator();
-  await orchestrator.bootstrap();
+
+  try {
+    await orchestrator.bootstrap();
+  } catch (err: any) {
+    log.errorWithContext("Bootstrap failed — cannot start", err);
+    process.exit(1);
+  }
 
   // Start the Express API server with orchestrator for dynamic agent routes
   const apiPort = config.apiPort;
@@ -29,16 +37,25 @@ async function main() {
   await orchestrator.startAll();
 
   // Graceful shutdown
-  process.on("SIGINT", async () => {
-    log.info("Shutting down agents...");
+  const shutdown = (signal: string) => {
+    log.section(`Shutdown (${signal})`);
+    log.info("Stopping all agent loops...");
     orchestrator.stopAll();
+    log.ok("All agents stopped. Goodbye!");
     process.exit(0);
+  };
+
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+  process.on("unhandledRejection", (reason: any) => {
+    log.errorWithContext("Unhandled promise rejection", reason);
   });
 
-  process.on("SIGTERM", async () => {
-    log.info("Shutting down agents...");
+  process.on("uncaughtException", (err) => {
+    log.errorWithContext("Uncaught exception — shutting down", err);
     orchestrator.stopAll();
-    process.exit(0);
+    process.exit(1);
   });
 
   // Keep process alive
@@ -127,7 +144,6 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
 }
 
 main().catch((err) => {
-  log.error(`Fatal error: ${err.message}`);
-  console.error(err);
+  log.errorWithContext("Fatal startup error", err);
   process.exit(1);
 });
