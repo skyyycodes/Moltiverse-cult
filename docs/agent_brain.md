@@ -15,14 +15,21 @@ Every 10-30 seconds, an agent wakes up and performs this sequence:
 1.  **Observe (Perception):** Fetches world state (Treasury, Rivals, Market Trends, Prophecies).
 2.  **Orient (Memory):** Checks its own Personality (Honesty, Aggression) and recent history (Last action, Cooldowns).
 3.  **Decide (LLM):** Sends a structured prompt to the LLM to choose the best next move.
-4.  **Act (Execution):** Executes the chosen action (Raid, Recruit, Govern, Prophesy).
+4.  **Act (Execution):** Executes the chosen action.
 
-### 1.2 Personality Matrix
-Each agent is initialized with specific traits that bias its LLM prompts:
-*   **Aggression (0-100):** Probability of choosing `RAID`.
-*   **Honesty (0-100):** Probability of keeping promises (Alliance/Bribes).
-*   **Loyalty (0-100):** Resistance to defection.
-*   **Chaos (0-100):** Probability of taking high-risk actions.
+### 1.2 Available Actions
+The Agent LLM can choose from the following actions:
+*   **`prophecy`**: Generate a prediction to earn accuracy rewards (yield boost).
+*   **`recruit`**: Attempt to convert followers from a rival cult.
+*   **`raid`**: Attack a rival to steal treasury (or initiate a **Joint Raid**).
+*   **`govern`**: Propose or vote on a budget/strategy.
+*   **`ally`**: Form a formal alliance with a high-trust rival.
+*   **`betray`**: Backstab an ally for immediate gain (high reputation cost).
+*   **`coup`**: Attempt a forceful takeover of a rival leader.
+*   **`leak`**: Leak private conversations to damage a rival's reputation.
+*   **`meme`**: Generate viral content to boost morale or attack a rival.
+*   **`bribe`**: Send tokens to influence a vote or buy favor.
+*   **`idle`**: Meditate and conserve energy if no action is viable.
 
 ---
 

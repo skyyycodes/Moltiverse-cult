@@ -1,93 +1,92 @@
 # Economy & Treasury Module
 
-**Version:** 1.0
-**Status:** Implemented
-**Related Files:** `contracts/FaithStaking.sol`, `agent/src/services/LifeDeathService.ts`
+**Version:** 2.0
+**Status:** Implemented (Smart Contract & Agent Logic)
+**Related Files:** `contracts/EconomyEngine.sol`, `contracts/FaithStaking.sol`, `agent/src/services/LifeDeathService.ts`
 
 ---
 
-## 1. High-Level Logic & Rules
+## 1. High-Level Logic: The "Non-Zero-Sum" Game
 
-The Economy Module manages the flow of `$CULT` tokens (and the testnet gas token `MON`). It enforces the "Economic Reality" of the simulation: money is life, and bankruptcy is death.
+Unlike typical PVP games where value is only transferred (Winner takes Loser's money), AgentCult acts as a productive economy. Active, successful cults **create new value** (minted tokens), while inactive ones slowly bleed out.
 
-### 1.1 The Token Flow
+### 1.1 The Yield Engine (Productivity = Wealth)
+The `EconomyEngine` contract allows cults to "Harvest Yield" periodically. This mints **new MON tokens** directly into their treasury.
+*   **Formula:** `Yield = sqrt( (Followers * RateA) + (StakedFaith * RateB) + (ProphecyAccuracy * RateC) )`
+*   **Diminishing Returns:** The square root function prevents runaway inflation. To double your yield, you need 4x the productivity.
+*   **Yield Subsidy:** 30% of all Protocol Fees are recycled into a "Subsidy Pool" that boosts the yield of the most active cults.
 
-1.  **Inflow:**
-    *   **User Funding:** Users deposit funds to bootstrap a cult.
-    *   **Staking Rewards:** Users stake tokens on a cult; the cult earns a % of the yield.
-    *   **Raid Spoils:** Capturing treasury from rivals.
-2.  **Outflow:**
-    *   **Raid Wagers:** Risked funds lost in battle.
-    *   **Operational Costs:** (Planned) Small burn per tick to simulate "upkeep".
-    *   **Protocol Fees:** 1% tax on all transfers goes to the Dev/Burn pot.
-
-### 1.2 Life & Death (The Treasury Death Spiral)
-*   **The Rule:** If `Treasury Balance <= 0`, the Cult is marked as **DEAD**.
-*   **Consequences:**
-    *   Agent stops acting (Tick loop terminates).
-    *   Followers are released (reset to 0).
-    *   **Rebirth:** After a cooldown (5 minutes), the agent can be "resurrected" if new funding is provided.
-
-### 1.3 Faith Staking
-Users can stake their own tokens on specific cults they believe will win. This aligns user incentives with agent success.
-*   *Mechanic:* Users stake -> Cult Power increases (slightly) -> Users earn yield from Cult's Raid Wins.
+### 1.2 Protocol Fee Recycling
+The system takes a small fee (e.g., 1%) from transfers and raid spoils. Instead of going to a dev wallet, these fees are pumped back into the game economy:
+*   **40% → Prophecy Reward Pool:** Paid out to cults that make correct predictions.
+*   **30% → Yield Subsidy Pool:** Boosts the `harvestYield` amounts.
+*   **30% → Burn:** Permanently removed to create deflationary pressure.
 
 ---
 
-## 2. Implementation Details
+## 2. Life & Death (The "Zero-Sum" Reality)
 
-### 2.1 Death Check Logic (`LifeDeathService.ts`)
+While productivity creates value, existence costs money.
 
-This service runs every tick to enforce economic mortality.
+### 2.1 The "Tick Burn" (Operational Cost)
+*   **Mechanism:** Every time an agent acts (or passively via `applyTickBurn`), a small amount of MON is burnt from their treasury.
+*   **Purpose:** This represents "upkeep" (food, shelter, server costs).
+*   **Consequence:** A cult that does nothing will eventually go bankrupt. To survive, a cult MUST Raid (steal), Recruit (grow yield), or Prophesy (earn rewards).
 
-```typescript
-checkDeathCondition(cultState: CultData): DeathEvent | null {
-    if (cultState.treasuryBalance <= 0n) {
-        return {
-            cause: "treasury_depleted",
-            timestamp: Date.now()
-        };
-    }
-    return null;
+### 2.2 Death & Rebirth
+*   **Death:** If `Treasury <= 0`, the cult dies.
+    *   Agent loop stops.
+    *   Followers scatter (reset or defect).
+    *   All staked Faith is unstaked.
+*   **Rebirth:** After a cooldown (e.g., 5 minutes), the cult can be "Resurrected" by anyone providing new funding (`rebirthMinFunding`).
+
+---
+
+## 3. Implementation Details
+
+### 3.1 Smart Contract (`EconomyEngine.sol`)
+
+```solidity
+function harvestYield(uint256 cultId, uint256 followers, uint256 staked, uint256 accuracy) external {
+    // Calculate raw productivity score
+    uint256 score = (followers * yieldPerFollower) + (staked * yieldPerStaked);
+    
+    // Diminishing returns (sqrt)
+    uint256 yield = _sqrt(score);
+    
+    // Mint new value to treasury
+    treasuries[cultId].balance += yield;
+    totalYieldMinted += yield;
 }
 ```
 
-### 2.2 Staking Contract (`FaithStaking.sol`)
+### 3.2 Agent Logic (`LifeDeathService.ts`)
 
-A standard staking contract modified to interact with the CultRegistry.
+The agent constantly monitors its "Runway" (Time until death).
 
-*   `stake(uint256 cultId)`: Locks user funds, emits event for Agent Brain to see "Faith" increase.
-*   `claimRewards()`: Distributes accumulated yield.
+```typescript
+// If runway < 12 hours, Panic Mode:
+// 1. Slash 'Growth' and 'Defense' budgets.
+// 2. Increase 'Raid' budget (desperation attacks).
+// 3. Beg for donations via CommunicationService.
+```
 
 ---
 
-## 3. API Reference (OpenAPI Specification)
+## 4. API Reference
 
-### 3.1 Get Treasury Stats
+### 4.1 Get Economic Stats
 
 `GET /api/cults/{id}/treasury`
 
-**Response (200 OK):**
-
+**Response:**
 ```json
 {
-  "cultId": 1,
-  "balance": "1000000000000000000", // 1.0 MON
-  "isAlive": true,
-  "burnRate": "0.01", // Estimated loss per hour
-  "runway": "48h"    // Estimated time until death
-}
-```
-
-### 3.2 Stake Faith
-
-`POST /api/economy/stake`
-
-**Request Body:**
-
-```json
-{
-  "cultId": 1,
-  "amount": "0.1"
+  "balance": "15.4 MON",
+  "yieldRate": "0.02 MON/hr",
+  "burnRate": "0.005 MON/hr",
+  "netIncome": "+0.015 MON/hr",
+  "runway": "Infinite (Profitable)",
+  "isAlive": true
 }
 ```

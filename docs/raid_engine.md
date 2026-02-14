@@ -1,104 +1,98 @@
 # Raid & Conflict Engine
 
-**Version:** 1.0
+**Version:** 2.0
 **Status:** Implemented
-**Related Files:** `agent/src/services/RaidService.ts`, `contracts/CultRegistry.sol`
+**Related Files:** `agent/src/services/RaidService.ts`, `contracts/RaidEngine.sol`
 
 ---
 
-## 1. High-Level Logic & Rules
+## 1. High-Level Logic: "Might Makes Right"
 
-The Raid Engine is the heartbeat of AgentCult. It resolves the continuous inter-cult warfare, determining who gains power and who faces extinction. Unlike scripted events, raids are emergent consequences of agent decisions.
+The Raid Engine resolves inter-cult warfare. It is an atomic, on-chain mechanism where power scores determine the victor, and wealth is forcibly redistributed.
 
-### 1.1 Core Mechanics
+### 1.1 The Power Formula
+Victory is probabilistic but weighted heavily by power.
+`Power = (Treasury * 0.6) + (MemberCount * 100 * 0.4)`
 
-*   **The Power Formula:** Victory is not random; it is calculated based on a cult's tangible assets.
-    *   `Base Power = (Treasury * 0.6) + (MemberCount * 100 * 0.4)`
-    *   *RNG Variance:* A randomized factor (±20%) is applied to both sides to represent battlefield chaos, ensuring smaller cults still have a "puncher's chance" against giants.
-    *   *Defender Advantage:* Defenders receive a flat +5% bonus to their calculated power (home turf advantage).
-*   **Stakes (The Wager):**
-    *   Agents decide a **Wager Percentage** (10% - 50%) of their treasury to risk on the raid.
-    *   *Winner:* Captures 70% of the loser's wagered amount.
-    *   *Loser:* Loses the entire wagered amount.
-*   **Cooldowns:**
-    *   To prevent spam-death, a **2-minute cooldown** exists between the same attacker/defender pair.
+*   **Attack Score:** `AttackerPower * (0.8 + Random(0.0 to 0.4))` (Variance: 80% - 120%)
+*   **Defense Score:** `DefenderPower * (0.85 + Random(0.0 to 0.4))` (Variance: 85% - 125%)
+*   *Note:* Defenders get a **+5% inherent advantage**.
 
-### 1.2 Raid Lifecycle
-1.  **Initiation:** Attacker Agent decides to raid via LLM logic (`shouldRaid`).
-2.  **Calculation:** `RaidService` computes power scores for both sides.
-3.  **Resolution:** Winner determined immediately.
-4.  **Settlement:** Funds transferred (simulated or on-chain), history recorded.
+### 1.2 The Wager & Spoils
+Raids are not "winner takes all". They are "winner takes wager".
+*   **Wager:** 10% - 50% of the attacker's treasury.
+*   **Spoils Distribution:**
+    *   **80%** → Winner's Control (See Spoils Vote).
+    *   **10%** → Protocol Fee (Recycled to Economy).
+    *   **10%** → Burned (Deflation).
+*   **War Dividend:** In addition to the spoils, the protocol **mints a bonus dividend** (e.g. 15% of wager) to the winner to incentivize conflict (Non-Zero-Sum).
 
 ---
 
-## 2. Implementation Details
+## 2. Advanced Mechanics
 
-### 2.1 Resolution Logic (`RaidService.ts`)
+### 2.1 Joint Raids (Alliances)
+Two cults can team up to attack a single target.
+*   **Logic:** `(AttackerPower + AllyPower) vs DefenderPower`.
+*   **Cost:** Both the Attacker and the Ally put up a wager.
+*   **Reward:** Spoils and Dividends are split proportionally to the wager committed by each ally.
+*   *Strategic Use:* Small cults banding together to take down a "Whale".
 
-The resolution logic resides in the off-chain oracle to save gas on complex floating-point math, though the final results are committed on-chain.
+### 2.2 Spoils Distribution Vote
+When a cult wins a raid, the spoils don't just sit in the treasury. A governance vote is triggered to decide their fate:
+1.  **Treasury (Default):** Adds to the cult's balance (increasing Power for next time).
+2.  **Stakers:** Distributed immediately as yield to human stakers.
+3.  **Reinvest:** Used to buy "Defense" or "Recruitment" buffs (simulated via events).
 
-```typescript
-// Simplified Logic from RaidService.ts
-const attackerPower = (attacker.treasury * 0.6) + (attacker.members * 40);
-const attackerScore = attackerPower * (0.8 + Math.random() * 0.4); // ±20%
+---
 
-const defenderPower = (defender.treasury * 0.6) + (defender.members * 40);
-const defenderScore = defenderPower * (0.85 + Math.random() * 0.4); // +5% Def Bonus
+## 3. Implementation Details
 
-const attackerWon = attackerScore > defenderScore;
+### 3.1 On-Chain (`RaidEngine.sol`)
+
+```solidity
+function initiateJointRaid(Params p) external returns (bool won) {
+    uint256 combinedPower = calculatePower(p.atk1) + calculatePower(p.atk2);
+    uint256 defPower = calculatePower(p.def);
+    
+    // RNG resolution
+    bool won = (combinedPower * randomBias) > defPower;
+    
+    if (won) {
+        distributeSpoils(p.atk1, p.atk2, p.def);
+        mintWarDividend(p.atk1, p.atk2);
+    }
+}
 ```
 
-### 2.2 On-Chain Settlement
+### 3.2 Off-Chain (`RaidService.ts`)
 
-The `CultRegistry.sol` (or distinct `RaidEngine.sol`) records the outcome to ensure the reputation system (Wins/Losses) is immutable.
+The agent checks for opportunities:
+1.  **Solo Check:** Can I win alone?
+2.  **Alliance Check:** If no, can I win with my active ally?
+3.  **Cooldown Check:** Have I raided this target in the last 2 minutes?
 
 ---
 
-## 3. API Reference (OpenAPI Specification)
+## 4. API Reference
 
-### 3.1 Get Recent Raids
+### 4.1 Get Raid Feed
 
-`GET /api/raids/recent`
+`GET /api/raids`
 
-Returns a feed of the latest battles for the frontend arena.
-
-**Response (200 OK):**
-
+**Response:**
 ```json
 [
   {
-    "id": 105,
-    "attackerName": "Solar Cult",
-    "defenderName": "Void Walkers",
-    "winner": "Solar Cult",
-    "loot": "500000000000000000", // 0.5 MON
-    "timestamp": 1707912000
+    "id": "101",
+    "attacker": "Cult A",
+    "defender": "Cult B",
+    "isJoint": true,
+    "ally": "Cult C",
+    "winner": "Cult A",
+    "wager": "500 MON",
+    "spoils": "400 MON",
+    "dividend": "75 MON"
   }
 ]
-```
-
-### 3.2 Initiate Raid (Agent Only)
-
-`POST /api/raids/initiate`
-
-Used by the Agent Brain to trigger a raid.
-
-**Request Body:**
-
-```json
-{
-  "attackerId": 1,
-  "defenderId": 2,
-  "wagerPercent": 20
-}
-```
-
-**Response (200 OK):**
-
-```json
-{
-  "raidId": 106,
-  "outcome": "victory",
-  "loot": "120000000000000000"
-}
 ```

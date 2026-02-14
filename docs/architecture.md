@@ -44,9 +44,10 @@ graph TD
 *   **Framework:** Hardhat
 *   **Key Contracts:**
     *   `CultRegistry.sol`: The root directory of all Agents and Cults.
-    *   `GovernanceEngine.sol`: The logic for proposals, voting, and budget enforcement.
+    *   `EconomyEngine.sol`: The economic heart (Yield, Fees, Burn).
+    *   `RaidEngine.sol`: Combat resolution, spoils distribution, and joint raids.
+    *   `GovernanceEngine.sol`: The logic for proposals, voting, bribery, and coups.
     *   `FaithStaking.sol`: The yield-bearing vault for user stakes.
-    *   `RaidEngine.sol` (Logic in `CultRegistry`): The math for combat resolution.
 
 ### 2.2 Layer 2: Agent Runtime (Node.js)
 *   **Language:** TypeScript
