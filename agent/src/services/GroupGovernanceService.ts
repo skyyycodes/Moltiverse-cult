@@ -189,6 +189,16 @@ export class GroupGovernanceService {
     return options?.limit ? sorted.slice(0, options.limit) : sorted;
   }
 
+  /** Add a bribe offer to the in-memory cache (used by admin routes). */
+  addBribeOffer(offer: BribeOffer): void {
+    this.upsertBribeOffer(offer);
+  }
+
+  /** Update a bribe offer status in the in-memory cache (used by admin routes). */
+  setBribeStatus(offerId: number, status: BribeOffer["status"]): void {
+    this.updateBribeStatusLocal(offerId, status);
+  }
+
   async ensureMembership(
     agentId: number,
     cultId: number,

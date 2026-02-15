@@ -5,6 +5,7 @@ import type { AgentOrchestrator } from "../../core/AgentOrchestrator.js";
 import {
   saveAgentMessage,
   saveGlobalChatMessage,
+  saveBribeOffer,
 } from "../../services/InsForgeService.js";
 
 const log = createLogger("API:Admin");
@@ -504,8 +505,31 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
         timestamp: now,
       });
 
+      // Create a pending bribe offer so it appears in the Bribe Offers panel
+      const offerRow = {
+        from_agent_id: fromCultId,
+        to_agent_id: toCultId,
+        target_cult_id: toCultId,
+        purpose: "admin_bribe",
+        amount: bribeAmount,
+        status: "pending" as const,
+        acceptance_probability: 1.0,
+        accepted_at: null,
+        expires_at: null,
+        created_at: now,
+      };
+      const offerId = await saveBribeOffer(offerRow);
+
+      // Also add to in-memory cache so it shows up immediately
+      orchestrator.groupGovernanceService.addBribeOffer({
+        id: offerId > 0 ? offerId : now,
+        ...offerRow,
+        createdAt: now,
+      });
+
       res.json({
         success: true,
+        offerId: offerId > 0 ? offerId : undefined,
         message: `Bribe of ${bribeAmount} $CULT sent from ${fromName} to ${toName}`,
       });
     } catch (error: any) {
@@ -562,7 +586,7 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
       await updateBribeOffer(offerId, { status: "accepted", accepted_at: acceptedAt });
 
       // Update local cache
-      (orchestrator.groupGovernanceService as any).updateBribeStatusLocal?.(offerId, "accepted");
+      orchestrator.groupGovernanceService.setBribeStatus(offerId, "accepted");
 
       const fromCult = stateStore.cults.find((c) => c.id === offer.from_agent_id);
       const toCult = stateStore.cults.find((c) => c.id === offer.to_agent_id);
@@ -617,7 +641,7 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
             offerId,
           );
           await updateBribeOffer(offerId, { status: "executed" });
-          (orchestrator.groupGovernanceService as any).updateBribeStatusLocal?.(offerId, "executed");
+          orchestrator.groupGovernanceService.setBribeStatus(offerId, "executed");
           switched = true;
 
           // Announce switch

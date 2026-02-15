@@ -844,14 +844,14 @@ function BribeOffersPanel({
                 )}
               </div>
 
-              {offer.status === "pending" && (
+              {(offer.status === "pending" || offer.status === "rejected") && (
                 <div className="flex gap-2 pt-1">
                   <ActionButton
                     variant="success"
                     loading={!!accepting[offer.id]}
                     onClick={() => acceptOffer(offer.id, false)}
                   >
-                    Accept
+                    Accept{offer.status === "rejected" ? " (Override)" : ""}
                   </ActionButton>
                   <ActionButton
                     variant="warning"
