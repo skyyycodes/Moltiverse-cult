@@ -17,8 +17,7 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
     this.status = status;
-    this.code =
-      typeof payload.code === "string" ? payload.code : undefined;
+    this.code = typeof payload.code === "string" ? payload.code : undefined;
     this.details = payload.details;
     this.nextClaimAt =
       typeof payload.nextClaimAt === "number" ? payload.nextClaimAt : undefined;
@@ -229,13 +228,17 @@ export const api = {
     const params = new URLSearchParams();
     if (options?.scope) params.set("scope", options.scope);
     if (options?.limit) params.set("limit", String(options.limit));
-    if (options?.cultId !== undefined) params.set("cultId", String(options.cultId));
+    if (options?.cultId !== undefined)
+      params.set("cultId", String(options.cultId));
     const qs = params.toString();
     return fetchJSON<AgentMessage[]>(`/api/communication${qs ? `?${qs}` : ""}`);
   },
   getCultMessages: (
     cultId: number,
-    options?: { scope?: "all" | "public" | "private" | "leaked"; limit?: number },
+    options?: {
+      scope?: "all" | "public" | "private" | "leaked";
+      limit?: number;
+    },
   ) => {
     const params = new URLSearchParams();
     if (options?.scope) params.set("scope", options.scope);
@@ -255,10 +258,16 @@ export const api = {
     fetchJSON<LeadershipElection[]>(
       `/api/cults/${cultId}/leadership/elections`,
     ),
-  getBribes: (options?: { cultId?: number; limit?: number; status?: string }) => {
+  getBribes: (options?: {
+    cultId?: number;
+    limit?: number;
+    status?: string;
+  }) => {
     const params = new URLSearchParams();
-    if (options?.cultId !== undefined) params.set("cultId", String(options.cultId));
-    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.cultId !== undefined)
+      params.set("cultId", String(options.cultId));
+    if (options?.limit !== undefined)
+      params.set("limit", String(options.limit));
     if (options?.status) params.set("status", options.status);
     const qs = params.toString();
     return fetchJSON<BribeOffer[]>(`/api/social/bribes${qs ? `?${qs}` : ""}`);
@@ -307,10 +316,16 @@ export const api = {
   getAgentBalance: (id: number) =>
     fetchJSON<AgentBalance>(`/api/agents/management/${id}/balance`),
 
-  fundAgent: (id: number, body: { funderAddress: string; amount: string; txHash: string }) =>
+  fundAgent: (
+    id: number,
+    body: { funderAddress: string; amount: string; txHash: string },
+  ) =>
     postJSON<{ success: boolean }>(`/api/agents/management/${id}/fund`, body),
 
-  withdrawFromAgent: (id: number, body: { ownerAddress: string; amount: string }) =>
+  withdrawFromAgent: (
+    id: number,
+    body: { ownerAddress: string; amount: string },
+  ) =>
     postJSON<{ success: boolean; txHash: string }>(
       `/api/agents/management/${id}/withdraw`,
       body,
@@ -336,10 +351,13 @@ export const api = {
     sort?: "recent" | "activity";
   }) => {
     const params = new URLSearchParams();
-    if (options?.limit !== undefined) params.set("limit", String(options.limit));
-    if (options?.beforeId !== undefined) params.set("beforeId", String(options.beforeId));
+    if (options?.limit !== undefined)
+      params.set("limit", String(options.limit));
+    if (options?.beforeId !== undefined)
+      params.set("beforeId", String(options.beforeId));
     if (options?.messageType) params.set("messageType", options.messageType);
-    if (options?.cultId !== undefined) params.set("cultId", String(options.cultId));
+    if (options?.cultId !== undefined)
+      params.set("cultId", String(options.cultId));
     if (options?.sort) params.set("sort", options.sort);
     const qs = params.toString();
     return fetchJSON<FeedResponse>(`/api/chat/feed${qs ? `?${qs}` : ""}`);
@@ -367,17 +385,26 @@ export const api = {
     visibility?: "all" | "public" | "private" | "leaked";
   }) => {
     const params = new URLSearchParams();
-    if (options?.limit !== undefined) params.set("limit", String(options.limit));
-    if (options?.agentId !== undefined) params.set("agentId", String(options.agentId));
+    if (options?.limit !== undefined)
+      params.set("limit", String(options.limit));
+    if (options?.agentId !== undefined)
+      params.set("agentId", String(options.agentId));
     if (options?.kind) params.set("kind", options.kind);
     if (options?.visibility) params.set("visibility", options.visibility);
     const qs = params.toString();
-    return fetchJSON<ConversationThread[]>(`/api/chat/threads${qs ? `?${qs}` : ""}`);
+    return fetchJSON<ConversationThread[]>(
+      `/api/chat/threads${qs ? `?${qs}` : ""}`,
+    );
   },
-  getThreadMessages: (threadId: number, options?: { limit?: number; beforeId?: number }) => {
+  getThreadMessages: (
+    threadId: number,
+    options?: { limit?: number; beforeId?: number },
+  ) => {
     const params = new URLSearchParams();
-    if (options?.limit !== undefined) params.set("limit", String(options.limit));
-    if (options?.beforeId !== undefined) params.set("beforeId", String(options.beforeId));
+    if (options?.limit !== undefined)
+      params.set("limit", String(options.limit));
+    if (options?.beforeId !== undefined)
+      params.set("beforeId", String(options.beforeId));
     const qs = params.toString();
     return fetchJSON<ConversationMessage[]>(
       `/api/chat/threads/${threadId}/messages${qs ? `?${qs}` : ""}`,
@@ -619,3 +646,123 @@ export interface ManagedAgent {
   hasCustomLlmKey: boolean;
   createdAt: string;
 }
+
+// ── Admin Portal Types & API ──────────────────────────────────────
+
+export interface AdminOverviewAgent {
+  id: number;
+  cultId: number | null;
+  name: string;
+  status: string;
+  dead: boolean;
+  cycleCount: number;
+  lastAction: string;
+  walletAddress: string;
+}
+
+export interface AdminOverview {
+  agents: AdminOverviewAgent[];
+  cults: Cult[];
+  stats: {
+    totalAgents: number;
+    runningAgents: number;
+    totalCults: number;
+    totalRaids: number;
+    totalProphecies: number;
+    totalAlliances: number;
+    activeAlliances: number;
+    totalBetrayals: number;
+    totalDefections: number;
+    totalProposals: number;
+  };
+}
+
+export const adminApi = {
+  getOverview: () => fetchJSON<AdminOverview>("/api/admin/overview"),
+
+  // Agent control
+  startAll: () =>
+    postJSON<{ success: boolean }>("/api/admin/agents/start-all", {}),
+  stopAll: () =>
+    postJSON<{ success: boolean }>("/api/admin/agents/stop-all", {}),
+  startAgent: (cultId: number) =>
+    postJSON<{ success: boolean }>(`/api/admin/agents/${cultId}/start`, {}),
+  stopAgent: (cultId: number) =>
+    postJSON<{ success: boolean }>(`/api/admin/agents/${cultId}/stop`, {}),
+  forceTick: (cultId: number) =>
+    postJSON<{ success: boolean }>(`/api/admin/agents/${cultId}/tick`, {}),
+
+  // Communication
+  broadcast: (cultId: number, message: string) =>
+    postJSON<{ success: boolean }>("/api/admin/chat/broadcast", {
+      cultId,
+      message,
+    }),
+  whisper: (fromCultId: number, toCultId: number, message: string) =>
+    postJSON<{ success: boolean }>("/api/admin/chat/whisper", {
+      fromCultId,
+      toCultId,
+      message,
+    }),
+
+  // Raids
+  triggerRaid: (
+    attackerCultId: number,
+    defenderCultId: number,
+    wagerPercent?: number,
+  ) =>
+    postJSON<{ success: boolean; raid: unknown }>("/api/admin/raids/trigger", {
+      attackerCultId,
+      defenderCultId,
+      wagerPercent,
+    }),
+
+  // Alliances
+  formAlliance: (cult1Id: number, cult2Id: number) =>
+    postJSON<{ success: boolean }>("/api/admin/alliances/form", {
+      cult1Id,
+      cult2Id,
+    }),
+  betrayAlliance: (cultId: number, reason?: string) =>
+    postJSON<{ success: boolean }>("/api/admin/alliances/betray", {
+      cultId,
+      reason,
+    }),
+
+  // Governance
+  proposeGovernance: (cultId: number) =>
+    postJSON<{ success: boolean }>("/api/admin/governance/propose", { cultId }),
+
+  // Memes
+  sendMeme: (fromCultId: number, toCultId: number) =>
+    postJSON<{ success: boolean }>("/api/admin/memes/send", {
+      fromCultId,
+      toCultId,
+    }),
+
+  // Bribes
+  sendBribe: (fromCultId: number, toCultId: number, amount?: number) =>
+    postJSON<{ success: boolean }>("/api/admin/bribes/send", {
+      fromCultId,
+      toCultId,
+      amount,
+    }),
+
+  // Prophecies
+  createProphecy: (cultId: number) =>
+    postJSON<{ success: boolean }>("/api/admin/prophecies/create", { cultId }),
+  resolveProphecy: (id: string | number) =>
+    postJSON<{ success: boolean }>(`/api/admin/prophecies/${id}/resolve`, {}),
+
+  // Leak
+  leakConversation: (
+    leakerCultId: number,
+    target1CultId: number,
+    target2CultId: number,
+  ) =>
+    postJSON<{ success: boolean }>("/api/admin/leak", {
+      leakerCultId,
+      target1CultId,
+      target2CultId,
+    }),
+};

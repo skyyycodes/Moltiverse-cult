@@ -13,6 +13,7 @@ import { agentCreationRoutes } from "./routes/agentCreation.js";
 import { memeTransferRoutes } from "./routes/memeTransfers.js";
 import { chatRoutes } from "./routes/chat.js";
 import { plannerRoutes } from "./routes/plans.js";
+import { adminRoutes } from "./routes/admin.js";
 import type { AgentOrchestrator } from "../core/AgentOrchestrator.js";
 
 const log = createLogger("API");
@@ -178,6 +179,7 @@ export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
     app.use("/api/social", memeTransferRoutes(orchestrator));
     app.use("/api/chat", chatRoutes(orchestrator));
     app.use("/api/plans", plannerRoutes());
+    app.use("/api/admin", adminRoutes(orchestrator));
   }
 
   // Mount static agent routes last (after specific paths)
@@ -193,20 +195,18 @@ export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
       (sum, c) => sum + parseFloat(c.treasury || "0"),
       0,
     );
-    const totalFollowers = cults.reduce(
-      (sum, c) => sum + c.followers,
-      0,
-    );
+    const totalFollowers = cults.reduce((sum, c) => sum + c.followers, 0);
     const totalRaids = stateStore.raids.filter(
       (raid) =>
-        managedCultIds.has(raid.attackerId) || managedCultIds.has(raid.defenderId),
+        managedCultIds.has(raid.attackerId) ||
+        managedCultIds.has(raid.defenderId),
     ).length;
     const totalProphecies = stateStore.prophecies.filter((prophecy) =>
       managedCultIds.has(prophecy.cultId),
     ).length;
-    const activeProphecies = stateStore.prophecies.filter(
-      (p) => !p.resolved,
-    ).filter((p) => managedCultIds.has(p.cultId)).length;
+    const activeProphecies = stateStore.prophecies
+      .filter((p) => !p.resolved)
+      .filter((p) => managedCultIds.has(p.cultId)).length;
 
     res.json({
       scope,
@@ -220,8 +220,8 @@ export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
         scope === "all"
           ? stateStore.agents.filter((a) => a.status === "running").length
           : stateStore.agents.filter(
-            (a) => a.status === "running" && managedCultIds.has(a.cultId),
-          ).length,
+              (a) => a.status === "running" && managedCultIds.has(a.cultId),
+            ).length,
     });
   });
 
