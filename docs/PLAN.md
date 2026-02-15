@@ -1,3 +1,18 @@
+# Tokenomics Verification Plan (HISTORICAL)
+
+> **⚠️ OUTDATED DOCUMENT**: This file contains historical planning notes for tokenomics verification. It references files and contracts that may no longer exist or have been significantly updated.
+>
+> **For current documentation, see:**
+> - [README.md](../README.md) - Project overview
+> - [ARCHITECTURE.md](../ARCHITECTURE.md) - System architecture
+> - [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) - Setup and development guide
+>
+> **Note**: The AgentCult system currently uses a simplified tokenomics model focused on hackathon demonstration. The detailed tokenomics described in this document represent future planned enhancements.
+
+---
+
+# Historical Content Below
+
 # Verification Plan: `docs/CULT_Token_Design_and_Tokenomics.md` (Future-Target Baseline)
 
 ## Summary
