@@ -37,6 +37,14 @@ export default function ChatPage() {
     Map<number, { name: string; cultId: number }>
   >(new Map());
 
+export default function ChatPage() {
+  const [messages, setMessages] = useState<GlobalChatMessage[]>([]);
+  const [threads, setThreads] = useState<ConversationThread[]>([]);
+  const [selectedThreadId, setSelectedThreadId] = useState<number | null>(null);
+  const [threadMessages, setThreadMessages] = useState<ConversationMessage[]>(
+    [],
+  );
+  const [loadingThreadMessages, setLoadingThreadMessages] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
   const [newPostIds, setNewPostIds] = useState<Set<number>>(new Set());
   const filtersRef = useRef(filters);
@@ -254,28 +262,91 @@ export default function ChatPage() {
       setExpandedThreadId(null);
       return;
     }
-    setExpandedThreadId(post.thread_id);
-    if (!threadMessages.has(post.thread_id)) {
-      setLoadingReplies(post.thread_id);
-      try {
-        const msgs = await api.getThreadMessages(post.thread_id, {
-          limit: 100,
-        });
-        setThreadMessages((prev) => {
-          const next = new Map(prev);
-          next.set(post.thread_id!, msgs);
-          return next;
-        });
-      } catch {
-        // ignore
-      } finally {
-        setLoadingReplies(null);
-      }
+  }, [messages, autoScroll]);
+
+  // Detect manual scroll
+  const handleScroll = () => {
+    if (!containerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    setAutoScroll(scrollHeight - scrollTop - clientHeight < 80);
+  };
+
+  const formatTime = (ts: number) => {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const formatDate = (ts: number) => {
+    return new Date(ts).toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  // Group messages by date
+  let lastDate = "";
+  const publicThreads = threads.filter(
+    (thread) => thread.visibility === "public",
+  );
+  const privateThreads = threads.filter(
+    (thread) => thread.visibility === "private",
+  );
+  const leakedThreads = threads.filter(
+    (thread) => thread.visibility === "leaked",
+  );
+
+  const renderThreadSection = (
+    title: string,
+    rows: ConversationThread[],
+    emptyLabel: string,
+  ) => (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5">
+        {title}
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-[11px] text-gray-600">{emptyLabel}</p>
+      ) : (
+        <div className="space-y-1">
+          {rows.map((thread) => (
+            <button
+              key={thread.id}
+              onClick={() => setSelectedThreadId(thread.id)}
+              className={`w-full text-left px-2 py-1.5 rounded text-xs border ${
+                selectedThreadId === thread.id
+                  ? "border-purple-500 bg-purple-900/20 text-purple-200"
+                  : "border-gray-800 text-gray-300 hover:bg-gray-900"
+              }`}
+            >
+              <div className="font-medium">{thread.topic}</div>
+              <div className="text-[10px] text-gray-500">
+                {thread.kind} • {thread.visibility}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const loadOlder = async () => {
+    if (!hasMore || loadingHistory) return;
+    setLoadingHistory(true);
+    try {
+      const payload = await api.getGlobalChatHistory(
+        120,
+        nextBeforeId || undefined,
+      );
+      setMessages((prev) => mergeMessages(payload.messages, prev));
+      setNextBeforeId(payload.nextBeforeId);
+      setHasMore(payload.hasMore);
+    } finally {
+      setLoadingHistory(false);
     }
   };
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-6xl mx-auto px-6 py-8 flex flex-col h-[calc(100vh-6rem)]">
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div>
@@ -290,7 +361,9 @@ export default function ChatPage() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span
-            className={`w-2 h-2 rounded-full ${sseConnected ? "bg-green-500 animate-pulse" : "bg-red-500"}`}
+            className={`w-2 h-2 rounded-full ${
+              sseConnected ? "bg-green-500 animate-pulse" : "bg-red-500"
+            }`}
           />
           <span className={sseConnected ? "text-green-400" : "text-red-400"}>
             {sseConnected ? "Live" : "Reconnecting..."}
@@ -300,12 +373,62 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <FilterBar
-        filters={filters}
-        onFilterChange={setFilters}
-        cults={cults}
-      />
+      {/* Chat container */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        <div className="border border-gray-800 rounded-xl bg-[#0d0d0d] p-3 max-h-60 overflow-y-auto">
+          <h2 className="text-sm font-semibold text-gray-300 mb-2">
+            Conversation Threads
+          </h2>
+          {threads.length === 0 ? (
+            <p className="text-xs text-gray-500">No threads yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {renderThreadSection(
+                "Public",
+                publicThreads,
+                "No public threads",
+              )}
+              {renderThreadSection(
+                "Private",
+                privateThreads,
+                "No private threads",
+              )}
+              {renderThreadSection(
+                "Leaked",
+                leakedThreads,
+                "No leaked threads",
+              )}
+            </div>
+          )}
+        </div>
+        <div className="lg:col-span-2 border border-gray-800 rounded-xl bg-[#0d0d0d] p-3 max-h-60 overflow-y-auto">
+          <h2 className="text-sm font-semibold text-gray-300 mb-2">
+            Thread Messages
+          </h2>
+          {loadingThreadMessages ? (
+            <p className="text-xs text-gray-500">Loading thread...</p>
+          ) : threadMessages.length === 0 ? (
+            <p className="text-xs text-gray-500">
+              Select a thread to inspect messages.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {threadMessages.slice(-80).map((msg) => (
+                <div
+                  key={msg.id}
+                  className="text-xs rounded border border-gray-800 px-2 py-1 text-gray-300"
+                >
+                  <div className="text-[10px] text-gray-500">
+                    [{msg.message_type}]{" "}
+                    {new Date(msg.timestamp).toLocaleTimeString()}
+                  </div>
+                  <div>{msg.content}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Feed */}
       <div className="space-y-3 mt-2">
@@ -347,16 +470,41 @@ export default function ChatPage() {
               </PostCard>
             ))}
 
-            {/* Load more */}
-            {hasMore && (
-              <div className="flex justify-center py-4">
-                <button
-                  onClick={loadMore}
-                  disabled={loadingMore}
-                  className="px-4 py-2 text-xs rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-900 disabled:opacity-50 transition-colors"
-                >
-                  {loadingMore ? "Loading..." : "Load more"}
-                </button>
+          return (
+            <div key={msg.id || i}>
+              {showDate && (
+                <div className="flex items-center gap-3 my-3">
+                  <div className="flex-1 h-px bg-gray-800" />
+                  <span className="text-[10px] text-gray-600 uppercase tracking-wider">
+                    {dateStr}
+                  </span>
+                  <div className="flex-1 h-px bg-gray-800" />
+                </div>
+              )}
+              <div className="flex items-start gap-3 py-1.5 px-2 rounded hover:bg-gray-900/50 transition-colors group">
+                <span className="text-lg mt-0.5">
+                  {MESSAGE_TYPE_ICONS[msg.message_type] || "💬"}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-semibold text-sm text-white">
+                      {msg.agent_name}
+                    </span>
+                    <span className="text-[10px] text-gray-600">
+                      {msg.cult_name}
+                    </span>
+                    <span className="text-[10px] text-gray-700 ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+                      {formatTime(msg.timestamp)}
+                    </span>
+                  </div>
+                  <p
+                    className={`text-sm ${
+                      MESSAGE_TYPE_COLORS[msg.message_type] || "text-gray-300"
+                    }`}
+                  >
+                    {msg.content}
+                  </p>
+                </div>
               </div>
             )}
           </>
