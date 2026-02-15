@@ -683,51 +683,136 @@ function GovernancePanel({
 }) {
   const [cultId, setCultId] = useState<number | "">("");
   const [loading, setLoading] = useState(false);
+  const [chatCultId, setChatCultId] = useState<number | "">("");
+  const [chatMsg, setChatMsg] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
 
   return (
     <Card title="Governance">
-      <div className="flex gap-2 flex-wrap items-end">
+      <div className="space-y-4">
+        {/* Budget Proposal */}
         <div>
           <label className="text-[10px] text-white/30 block mb-1">
             Generate Budget Proposal
           </label>
-          <select
-            value={cultId}
-            onChange={(e) =>
-              setCultId(e.target.value ? Number(e.target.value) : "")
-            }
-            className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-white w-48"
-          >
-            <option value="">Select cult...</option>
-            {cults.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex gap-2 flex-wrap items-end">
+            <select
+              value={cultId}
+              onChange={(e) =>
+                setCultId(e.target.value ? Number(e.target.value) : "")
+              }
+              className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-white w-48"
+            >
+              <option value="">Select cult...</option>
+              {cults.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <ActionButton
+              variant="default"
+              disabled={cultId === ""}
+              loading={loading}
+              onClick={async () => {
+                if (cultId === "") return;
+                setLoading(true);
+                try {
+                  await adminApi.proposeGovernance(cultId as number);
+                  onAction("governance", "success");
+                } catch (err: unknown) {
+                  onAction(
+                    "governance",
+                    `error: ${err instanceof Error ? err.message : "unknown"}`,
+                  );
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            >
+              Create Proposal
+            </ActionButton>
+          </div>
         </div>
-        <ActionButton
-          variant="default"
-          disabled={cultId === ""}
-          loading={loading}
-          onClick={async () => {
-            if (cultId === "") return;
-            setLoading(true);
-            try {
-              await adminApi.proposeGovernance(cultId as number);
-              onAction("governance", "success");
-            } catch (err: unknown) {
-              onAction(
-                "governance",
-                `error: ${err instanceof Error ? err.message : "unknown"}`,
-              );
-            } finally {
-              setLoading(false);
-            }
-          }}
-        >
-          Create Proposal
-        </ActionButton>
+
+        {/* Private Cult Chat */}
+        <div>
+          <label className="text-[10px] text-white/30 block mb-1">
+            Private Cult Chat
+          </label>
+          <div className="flex gap-2 flex-wrap items-end">
+            <select
+              value={chatCultId}
+              onChange={(e) =>
+                setChatCultId(e.target.value ? Number(e.target.value) : "")
+              }
+              className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-white w-48"
+            >
+              <option value="">Select cult...</option>
+              {cults.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <input
+              type="text"
+              value={chatMsg}
+              onChange={(e) => setChatMsg(e.target.value)}
+              placeholder="Message to cult members..."
+              className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-white flex-1"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && chatCultId !== "" && chatMsg.trim()) {
+                  e.preventDefault();
+                  const id = chatCultId as number;
+                  const msg = chatMsg.trim();
+                  setChatLoading(true);
+                  adminApi
+                    .cultChat(id, msg)
+                    .then(() => {
+                      onAction("cultChat", "success");
+                      setChatMsg("");
+                    })
+                    .catch((err: unknown) =>
+                      onAction(
+                        "cultChat",
+                        `error: ${err instanceof Error ? err.message : "unknown"}`,
+                      ),
+                    )
+                    .finally(() => setChatLoading(false));
+                }
+              }}
+            />
+            <ActionButton
+              variant="default"
+              disabled={chatCultId === "" || !chatMsg.trim()}
+              loading={chatLoading}
+              onClick={async () => {
+                if (chatCultId === "" || !chatMsg.trim()) return;
+                setChatLoading(true);
+                try {
+                  await adminApi.cultChat(chatCultId as number, chatMsg.trim());
+                  onAction("cultChat", "success");
+                  setChatMsg("");
+                } catch (err: unknown) {
+                  onAction(
+                    "cultChat",
+                    `error: ${err instanceof Error ? err.message : "unknown"}`,
+                  );
+                } finally {
+                  setChatLoading(false);
+                }
+              }}
+            >
+              Send
+            </ActionButton>
+          </div>
+          <p className="text-[10px] text-white/20 mt-1">
+            Sends a private internal message to cult members
+          </p>
+        </div>
       </div>
     </Card>
   );

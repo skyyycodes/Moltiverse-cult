@@ -732,6 +732,11 @@ export const adminApi = {
   // Governance
   proposeGovernance: (cultId: number) =>
     postJSON<{ success: boolean }>("/api/admin/governance/propose", { cultId }),
+  cultChat: (cultId: number, message: string) =>
+    postJSON<{ success: boolean }>("/api/admin/governance/cult-chat", {
+      cultId,
+      message,
+    }),
 
   // Memes
   sendMeme: (fromCultId: number, toCultId: number) =>

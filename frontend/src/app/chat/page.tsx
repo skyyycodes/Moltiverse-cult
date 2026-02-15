@@ -92,6 +92,11 @@ const MESSAGE_TYPE_BADGES: Record<
     color: "text-indigo-300",
     bg: "bg-indigo-500/15 border-indigo-500/30",
   },
+  cult_chat: {
+    label: "CULT CHAT",
+    color: "text-violet-300",
+    bg: "bg-violet-500/15 border-violet-500/30",
+  },
 };
 
 const CULT_NAME_COLORS: Record<string, string> = {

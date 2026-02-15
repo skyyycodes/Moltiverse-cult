@@ -422,6 +422,61 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
     }
   });
 
+  router.post("/governance/cult-chat", async (req: Request, res: Response) => {
+    try {
+      const { cultId, message } = req.body;
+      if (cultId === undefined || cultId === null || !message) {
+        res.status(400).json({ error: "cultId and message required" });
+        return;
+      }
+
+      const cult = stateStore.cults.find((c) => c.id === cultId);
+      const cultName = cult?.name || `Cult ${cultId}`;
+      const now = Date.now();
+
+      // Save as a private agent message visible only to cult members
+      await saveAgentMessage({
+        type: "cult_chat",
+        from_cult_id: cultId,
+        from_cult_name: cultName,
+        target_cult_id: cultId,
+        target_cult_name: cultName,
+        content: message,
+        visibility: "private",
+        is_private: true,
+        channel_id: `cult_internal_${cultId}`,
+        timestamp: now,
+      }).catch(() => {});
+
+      // Also save to global chat so it appears in the feed with cult_chat type
+      const globalId = await saveGlobalChatMessage({
+        agent_id: cultId,
+        cult_id: cultId,
+        agent_name: cultName,
+        cult_name: cultName,
+        message_type: "cult_chat",
+        content: `[Internal] ${message}`,
+        timestamp: now,
+      }).catch(() => -1);
+
+      broadcastEvent("global_chat", {
+        id: globalId > 0 ? globalId : now,
+        agent_id: cultId,
+        cult_id: cultId,
+        agent_name: cultName,
+        cult_name: cultName,
+        message_type: "cult_chat",
+        content: `[Internal] ${message}`,
+        timestamp: now,
+      });
+
+      res.json({ success: true, content: message });
+    } catch (error: any) {
+      log.error(`Cult chat failed: ${error.message}`);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ─── Memes ─────────────────────────────────────────────────────
 
   router.post("/memes/send", async (req: Request, res: Response) => {
