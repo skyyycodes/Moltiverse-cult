@@ -29,7 +29,7 @@ export function LeaderBoard({ cults }: Props) {
         <tbody>
           {sorted.map((cult, i) => {
             const color = CULT_COLORS[cult.id] || "#666";
-            const icon = CULT_ICONS[cult.id] || "⛪";
+            const icon = CULT_ICONS[cult.id] || "—";
             const totalRaids = cult.raidWins + cult.raidLosses;
             const winRate =
               totalRaids > 0

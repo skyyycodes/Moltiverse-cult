@@ -1,3 +1,4 @@
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@900,700,500,301,701,300,501,401,901,400&display=swap');
 @import "tailwindcss";
 
 :root {
@@ -27,13 +28,13 @@
   --color-cult-darker: var(--cult-darker);
   --color-cult-border: var(--cult-border);
   --color-cult-surface: var(--cult-surface);
-  --font-sans: var(--font-geist-sans, var(--font-inter)), system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-display: var(--font-playfair-display), Georgia, "Times New Roman", serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  --font-sans: "Satoshi", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Satoshi", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
 }
 
 html {
-  font-size: 18px;
+  font-size: 20px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -270,4 +271,60 @@ body {
 ::selection {
   background: rgba(185, 28, 28, 0.3);
   color: white;
+}
+
+/* ── Retro grid animation ────────────────────────────────── */
+@keyframes grid-scroll {
+  0% {
+    transform: translateY(0);
+  }
+
+  100% {
+    transform: translateY(60px);
+  }
+}
+
+.animate-grid {
+  animation: grid-scroll 4s linear infinite;
+}
+
+/* ── Mobile menu animations ──────────────────────────────── */
+@keyframes animate-in-zoom {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes animate-out-zoom {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+[data-slot="open"].animate-in {
+  animation: animate-in-zoom 200ms ease-out forwards;
+}
+
+[data-slot="closed"].animate-out {
+  animation: animate-out-zoom 150ms ease-in forwards;
+}
+
+.zoom-in-95 {
+  --tw-enter-scale: 0.95;
+}
+
+.zoom-out-95 {
+  --tw-exit-scale: 0.95;
 }

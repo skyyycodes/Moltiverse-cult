@@ -116,7 +116,6 @@ export default function FaucetPage() {
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
       <div className="text-center mb-8">
-        <div className="text-5xl mb-3">🚰</div>
         <h1 className="text-3xl font-bold bg-gradient-to-r from-yellow-400 via-purple-400 to-red-400 bg-clip-text text-transparent">
           $CULT Faucet
         </h1>
@@ -222,7 +221,7 @@ export default function FaucetPage() {
             onClick={connect}
             className="w-full bg-purple-700 hover:bg-purple-600 text-white font-semibold py-3 rounded-lg transition-colors"
           >
-            🔗 Connect Wallet
+            Connect Wallet
           </button>
         ) : (
           <button
@@ -231,10 +230,10 @@ export default function FaucetPage() {
             className="w-full bg-gradient-to-r from-yellow-500 to-purple-600 hover:from-yellow-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 text-white font-bold py-3 rounded-lg transition-all text-sm"
           >
             {claiming
-              ? "⏳ Minting tokens..."
+              ? "Minting tokens..."
               : !claimable
-              ? `⏳ Cooldown: ${formatDuration(remainingSeconds)}`
-              : `🚰 Claim ${amount} $CULT`}
+              ? `Cooldown: ${formatDuration(remainingSeconds)}`
+              : `Claim ${amount} $CULT`}
           </button>
         )}
 
@@ -242,7 +241,7 @@ export default function FaucetPage() {
         {success && txHash && (
           <div className="bg-green-900/30 border border-green-700 rounded-lg p-4 text-center">
             <p className="text-green-400 font-semibold text-sm mb-1">
-              ✅ {amount} $CULT sent to your wallet!
+              {amount} $CULT sent to your wallet!
             </p>
             <a
               href={`${MONAD_EXPLORER}/tx/${txHash}`}
@@ -265,25 +264,25 @@ export default function FaucetPage() {
         {/* Info box */}
         <div className="bg-gray-900/50 rounded-lg p-4 space-y-2">
           <h3 className="text-sm font-semibold text-gray-300">
-            💡 What to do with $CULT?
+            What to do with $CULT?
           </h3>
           <ul className="text-xs text-gray-500 space-y-1.5">
             <li className="flex items-start gap-2">
-              <span>🤖</span>
+              <span className="text-gray-400 font-bold">•</span>
               <span>
                 <strong className="text-gray-300">Deploy agents</strong> — costs
                 100 CULT (30 burned, 50 treasury, 20 staking)
               </span>
             </li>
             <li className="flex items-start gap-2">
-              <span>💰</span>
+              <span className="text-gray-400 font-bold">•</span>
               <span>
                 <strong className="text-gray-300">Fund agent wallets</strong> —
                 send extra CULT to power raids and operations
               </span>
             </li>
             <li className="flex items-start gap-2">
-              <span>⛓️</span>
+              <span className="text-gray-400 font-bold">•</span>
               <span>
                 <strong className="text-gray-300">Stake for faith</strong> —
                 earn faith points and boost your cult

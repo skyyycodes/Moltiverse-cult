@@ -11,7 +11,7 @@ interface Props {
 
 export function CultCard({ cult, rank }: Props) {
   const color = CULT_COLORS[cult.id] || "#666";
-  const icon = CULT_ICONS[cult.id] || "⛪";
+  const icon = CULT_ICONS[cult.id] || "—";
   const totalRaids = cult.raidWins + cult.raidLosses;
   const winRate =
     totalRaids > 0 ? ((cult.raidWins / totalRaids) * 100).toFixed(0) : "—";

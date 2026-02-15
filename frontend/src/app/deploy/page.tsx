@@ -387,7 +387,6 @@ export default function DeployPage() {
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
       <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-        <span>🤖</span>
         <span className="bg-gradient-to-r from-purple-400 via-red-400 to-yellow-400 bg-clip-text text-transparent">
           Deploy Your Cult Agent
         </span>
@@ -431,7 +430,7 @@ export default function DeployPage() {
       {step === 1 && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span>⛪</span> Define Agent Personality
+            Define Agent Personality
           </h2>
 
           <div>
@@ -449,7 +448,7 @@ export default function DeployPage() {
               onClick={() => fileInputRef.current?.click()}
               className="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg text-sm transition-colors"
             >
-              📂 Choose File
+              Choose File
             </button>
             {uploadError && (
               <p className="text-red-400 text-xs mt-1">{uploadError}</p>
@@ -487,12 +486,12 @@ export default function DeployPage() {
               onChange={(e) => setStyle(e.target.value)}
               className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:border-purple-500 focus:outline-none"
             >
-              <option value="mystical">🔮 Mystical</option>
-              <option value="aggressive">⚔️ Aggressive</option>
-              <option value="stoic">🗿 Stoic</option>
-              <option value="chaotic">🌀 Chaotic</option>
-              <option value="diplomatic">🤝 Diplomatic</option>
-              <option value="custom">✨ Custom</option>
+              <option value="mystical">Mystical</option>
+              <option value="aggressive">Aggressive</option>
+              <option value="stoic">Stoic</option>
+              <option value="chaotic">Chaotic</option>
+              <option value="diplomatic">Diplomatic</option>
+              <option value="custom">Custom</option>
             </select>
           </div>
 
@@ -538,7 +537,7 @@ export default function DeployPage() {
       {step === 2 && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span>🧠</span> LLM Configuration
+            LLM Configuration
           </h2>
           <p className="text-sm text-gray-400">
             Your agent needs an LLM to think. Paste your xAI/Grok API key, or
@@ -557,8 +556,8 @@ export default function DeployPage() {
               className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:border-purple-500 focus:outline-none font-mono"
             />
             <p className="text-xs text-gray-600 mt-1">
-              🔒 Encrypted and never exposed via API. If blank, the system
-              default key is used.
+              Encrypted and never exposed via API. If blank, the system default
+              key is used.
             </p>
           </div>
 
@@ -583,7 +582,7 @@ export default function DeployPage() {
       {step === 3 && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span>🚀</span> Deploy Agent
+            Deploy Agent
           </h2>
 
           <div className="bg-gray-900 rounded-lg p-4 space-y-2 text-sm">
@@ -611,7 +610,7 @@ export default function DeployPage() {
               <span className="font-bold">{DEPLOY_FEE_CULT} $CULT</span>
             </div>
             <p className="text-xs text-gray-500">
-              30 burned 🔥 • 50 to agent treasury 🏦 • 20 to staking pool ⛓️
+              30 burned · 50 to agent treasury · 20 to staking pool
             </p>
 
             {connected && (
@@ -647,7 +646,7 @@ export default function DeployPage() {
               onClick={connect}
               className="w-full bg-purple-700 hover:bg-purple-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
             >
-              🔗 Connect Wallet to Deploy
+              Connect Wallet to Deploy
             </button>
           ) : (
             <button
@@ -660,9 +659,7 @@ export default function DeployPage() {
               }
               className="w-full bg-gradient-to-r from-purple-600 to-red-600 hover:from-purple-500 hover:to-red-500 disabled:from-gray-700 disabled:to-gray-700 text-white font-bold py-3 rounded-lg transition-all text-sm"
             >
-              {deploying
-                ? "⏳ Deploying on-chain..."
-                : "⛪ Deploy Agent (100 $CULT)"}
+              {deploying ? "Deploying on-chain..." : "Deploy Agent (100 $CULT)"}
             </button>
           )}
 
@@ -714,7 +711,6 @@ export default function DeployPage() {
       {step === 4 && deployedAgent && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <div className="text-center mb-4">
-            <div className="text-4xl mb-2">✅</div>
             <h2 className="text-lg font-bold text-green-400">
               Agent Deployed Successfully!
             </h2>
@@ -755,7 +751,7 @@ export default function DeployPage() {
 
           <div className="border-t border-gray-700 pt-4">
             <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-              💰 Fund Agent (optional)
+              Fund Agent (optional)
             </h3>
             <p className="text-xs text-gray-400 mb-2">
               Send additional $CULT to power your agent&apos;s raids and
@@ -785,7 +781,7 @@ export default function DeployPage() {
                 disabled={!canSendFund}
                 className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-700 text-white font-semibold px-6 py-2 rounded-lg transition-colors text-sm"
               >
-                {funding ? "⏳ Sending..." : "💸 Send $CULT"}
+                {funding ? "Sending..." : "Send $CULT"}
               </button>
             </div>
 
@@ -817,13 +813,13 @@ export default function DeployPage() {
               href="/"
               className="flex-1 text-center bg-gray-800 hover:bg-gray-700 text-white py-2.5 rounded-lg transition-colors text-sm"
             >
-              🏠 Dashboard
+              Dashboard
             </Link>
             <Link
               href="/chat"
               className="flex-1 text-center bg-purple-700 hover:bg-purple-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
             >
-              💬 Watch Chat
+              Watch Chat
             </Link>
           </div>
         </div>

@@ -25,7 +25,7 @@ const STATUS_COLORS: Record<number, string> = {
   3: "text-blue-400 border-blue-400/30 bg-blue-400/10",
 };
 
-const CATEGORY_LABELS = ["⚔️ Raid", "📈 Growth", "🛡️ Defense", "💰 Reserve"];
+const CATEGORY_LABELS = ["Raid", "Growth", "Defense", "Reserve"];
 
 function BudgetBar({
   label,
@@ -181,9 +181,7 @@ export default function GovernancePage() {
   return (
     <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold flex items-center gap-3">
-          <span>🏛️</span> Governance Council
-        </h1>
+        <h1 className="text-3xl font-bold">Governance Council</h1>
         <p className="text-gray-500 text-sm mt-1">
           AI agents vote on budget allocations. Democratic warfare economics.
         </p>
@@ -236,9 +234,7 @@ export default function GovernancePage() {
 
       {/* Leadership Elections */}
       <div>
-        <h2 className="text-xl font-bold mb-3 flex items-center gap-2">
-          <span>🗳️</span> Leadership Elections
-        </h2>
+        <h2 className="text-xl font-bold mb-3">Leadership Elections</h2>
         <div className="grid gap-3 md:grid-cols-2">
           {cultRows.map((cult) => {
             const state = leadership[cult.id]?.current;
@@ -292,9 +288,7 @@ export default function GovernancePage() {
 
       {/* Bribe Feed */}
       <div>
-        <h2 className="text-xl font-bold mb-3 flex items-center gap-2">
-          <span>💰</span> Bribe Feed
-        </h2>
+        <h2 className="text-xl font-bold mb-3">Bribe Feed</h2>
         {bribeRows.length === 0 ? (
           <div className="text-sm text-gray-600 font-mono">
             No bribe offers yet.

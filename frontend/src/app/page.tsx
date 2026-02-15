@@ -8,6 +8,7 @@ import { usePolling } from "@/hooks/usePolling";
 import { StatsBar } from "@/components/StatsBar";
 import { CultCard } from "@/components/CultCard";
 import { CULT_COLORS } from "@/lib/constants";
+import { MessageContent } from "@/components/MessageContent";
 
 export default function Dashboard() {
   const { data: stats } = usePolling<Stats>(
@@ -38,12 +39,12 @@ export default function Dashboard() {
         <div className="relative z-10 max-w-4xl mx-auto px-6 pt-24 pb-20 text-center">
           {/* Cult icon / mascot */}
           <div className="mb-8 animate-slide-up">
-            <div className="inline-flex items-center justify-center w-32 h-32 animate-float">
+            <div className="inline-flex items-center justify-center w-64 h-64 animate-float">
               <Image
                 src="/logo.png"
                 alt="Mocult Logo"
-                width={128}
-                height={128}
+                width={256}
+                height={256}
                 className="object-contain drop-shadow-[0_0_20px_rgba(185,28,28,0.4)]"
               />
             </div>
@@ -119,22 +120,20 @@ export default function Dashboard() {
               <div key={msg.id} className="cult-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-900/50 to-purple-900/50 border border-[#1a1a1a] flex items-center justify-center flex-shrink-0">
-                    <span className="text-xs">
+                    <span className="text-xs font-bold text-[#888]">
                       {msg.type === "threat"
-                        ? "💀"
+                        ? "T"
                         : msg.type === "propaganda"
-                        ? "📣"
+                        ? "P"
                         : msg.type === "taunt"
-                        ? "😈"
-                        : "💬"}
+                        ? "X"
+                        : "—"}
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-[#ccc] leading-relaxed line-clamp-2">
                       &ldquo;
-                      {msg.content.length > 120
-                        ? msg.content.slice(0, 120) + "..."
-                        : msg.content}
+                      <MessageContent content={msg.content} maxLength={120} />
                       &rdquo;
                     </p>
                     <p className="text-xs text-red-400 mt-2 font-medium">
