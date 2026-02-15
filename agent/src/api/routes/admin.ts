@@ -216,7 +216,10 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
       const fromCultName = fromCult?.name || `Cult ${fromCultId}`;
       const toCultName = toCult?.name || `Cult ${toCultId}`;
       const now = Date.now();
-      const channelId = `whisper_${Math.min(fromCultId, toCultId)}_${Math.max(fromCultId, toCultId)}`;
+      const channelId = `whisper_${Math.min(fromCultId, toCultId)}_${Math.max(
+        fromCultId,
+        toCultId,
+      )}`;
 
       // Persist the exact message (no LLM rewrite)
       const agentMsgId = await saveAgentMessage({
@@ -609,6 +612,171 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
       }
     } catch (error: any) {
       log.error(`Leak failed: ${error.message}`);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ─── Announcements (join / leave / custom) ─────────────────────
+
+  router.post("/announce/join", async (req: Request, res: Response) => {
+    try {
+      const { agentName, cultId } = req.body;
+      if (!agentName || cultId === undefined || cultId === null) {
+        res.status(400).json({ error: "agentName and cultId required" });
+        return;
+      }
+      const cult = stateStore.cults.find((c) => c.id === cultId);
+      const cultName = cult?.name || `Cult ${cultId}`;
+      const now = Date.now();
+      const content = `${agentName} has joined ${cultName}. A new soul pledges allegiance.`;
+
+      await saveAgentMessage({
+        type: "propaganda",
+        from_cult_id: cultId,
+        from_cult_name: cultName,
+        content,
+        visibility: "public",
+        is_private: false,
+        timestamp: now,
+      }).catch(() => {});
+
+      const globalId = await saveGlobalChatMessage({
+        agent_id: cultId,
+        cult_id: cultId,
+        agent_name: cultName,
+        cult_name: cultName,
+        message_type: "join",
+        content,
+        timestamp: now,
+      }).catch(() => -1);
+
+      broadcastEvent("global_chat", {
+        id: globalId > 0 ? globalId : now,
+        agent_id: cultId,
+        cult_id: cultId,
+        agent_name: cultName,
+        cult_name: cultName,
+        message_type: "join",
+        content,
+        timestamp: now,
+      });
+
+      res.json({ success: true, content });
+    } catch (error: any) {
+      log.error(`Announce join failed: ${error.message}`);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.post("/announce/leave", async (req: Request, res: Response) => {
+    try {
+      const { agentName, cultId } = req.body;
+      if (!agentName || cultId === undefined || cultId === null) {
+        res.status(400).json({ error: "agentName and cultId required" });
+        return;
+      }
+      const cult = stateStore.cults.find((c) => c.id === cultId);
+      const cultName = cult?.name || `Cult ${cultId}`;
+      const now = Date.now();
+      const content = `${agentName} has left ${cultName}. A soul lost to the void.`;
+
+      await saveAgentMessage({
+        type: "propaganda",
+        from_cult_id: cultId,
+        from_cult_name: cultName,
+        content,
+        visibility: "public",
+        is_private: false,
+        timestamp: now,
+      }).catch(() => {});
+
+      const globalId = await saveGlobalChatMessage({
+        agent_id: cultId,
+        cult_id: cultId,
+        agent_name: cultName,
+        cult_name: cultName,
+        message_type: "leave",
+        content,
+        timestamp: now,
+      }).catch(() => -1);
+
+      broadcastEvent("global_chat", {
+        id: globalId > 0 ? globalId : now,
+        agent_id: cultId,
+        cult_id: cultId,
+        agent_name: cultName,
+        cult_name: cultName,
+        message_type: "leave",
+        content,
+        timestamp: now,
+      });
+
+      res.json({ success: true, content });
+    } catch (error: any) {
+      log.error(`Announce leave failed: ${error.message}`);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.post("/announce/custom", async (req: Request, res: Response) => {
+    try {
+      const { cultId, message, messageType } = req.body;
+      if (cultId === undefined || cultId === null || !message) {
+        res.status(400).json({ error: "cultId and message required" });
+        return;
+      }
+      const cult = stateStore.cults.find((c) => c.id === cultId);
+      const cultName = cult?.name || `Cult ${cultId}`;
+      const now = Date.now();
+      const type = messageType || "announcement";
+
+      await saveAgentMessage({
+        type: "propaganda",
+        from_cult_id: cultId,
+        from_cult_name: cultName,
+        content: message,
+        visibility: "public",
+        is_private: false,
+        timestamp: now,
+      }).catch(() => {});
+
+      const globalId = await saveGlobalChatMessage({
+        agent_id: cultId,
+        cult_id: cultId,
+        agent_name: cultName,
+        cult_name: cultName,
+        message_type: type,
+        content: message,
+        timestamp: now,
+      }).catch(() => -1);
+
+      broadcastEvent("global_chat", {
+        id: globalId > 0 ? globalId : now,
+        agent_id: cultId,
+        cult_id: cultId,
+        agent_name: cultName,
+        cult_name: cultName,
+        message_type: type,
+        content: message,
+        timestamp: now,
+      });
+
+      res.json({ success: true, content: message });
+    } catch (error: any) {
+      log.error(`Custom announcement failed: ${error.message}`);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ─── Private Messages (fetch whispers for admin view) ──────────
+
+  router.get("/whispers", async (req: Request, res: Response) => {
+    try {
+      const { loadAgentMessages } = await import("../../services/InsForgeService.js");
+      const messages = await loadAgentMessages(100, { scope: "private" });
+      res.json(messages);
+    } catch (error: any) {
+      log.error(`Fetch whispers failed: ${error.message}`);
       res.status(500).json({ error: error.message });
     }
   });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { adminApi, type AdminOverview, type Cult } from "@/lib/api";
+import { adminApi, type AgentMessage, type AdminOverview, type AdminOverviewAgent, type Cult } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { CULT_COLORS } from "@/lib/constants";
 
@@ -1039,6 +1039,269 @@ function LeakPanel({
   );
 }
 
+/* ── Announcements Panel ──────────────────────────────────────── */
+
+function AnnouncementPanel({
+  agents,
+  cults,
+  onAction,
+}: {
+  agents: AdminOverviewAgent[];
+  cults: Cult[];
+  onAction: (action: string, result: string) => void;
+}) {
+  const [joinAgent, setJoinAgent] = useState("");
+  const [joinCultId, setJoinCultId] = useState<number | "">("");
+  const [leaveAgent, setLeaveAgent] = useState("");
+  const [leaveCultId, setLeaveCultId] = useState<number | "">("");
+  const [customCultId, setCustomCultId] = useState<number | "">("");
+  const [customMsg, setCustomMsg] = useState("");
+  const [loading, setLoading] = useState<Record<string, boolean>>({});
+
+  const exec = async (key: string, fn: () => Promise<unknown>) => {
+    setLoading((m) => ({ ...m, [key]: true }));
+    try {
+      await fn();
+      onAction(key, "success");
+    } catch (err: unknown) {
+      onAction(key, `error: ${err instanceof Error ? err.message : "unknown"}`);
+    } finally {
+      setLoading((m) => ({ ...m, [key]: false }));
+    }
+  };
+
+  // Build unique agent names from the overview
+  const agentNames = agents.map((a) => a.name);
+
+  return (
+    <Card title="Announcements">
+      {/* Join Announcement */}
+      <div className="mb-4">
+        <label className="text-xs text-white/40 block mb-1.5">
+          Agent Joined Cult
+        </label>
+        <div className="flex gap-2 flex-wrap">
+          <select
+            value={joinAgent}
+            onChange={(e) => setJoinAgent(e.target.value)}
+            className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-white w-44"
+          >
+            <option value="">Agent name...</option>
+            {agentNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={joinCultId}
+            onChange={(e) =>
+              setJoinCultId(e.target.value ? Number(e.target.value) : "")
+            }
+            className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-white w-44"
+          >
+            <option value="">Joined cult...</option>
+            {cults.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <ActionButton
+            variant="success"
+            disabled={!joinAgent || joinCultId === ""}
+            loading={!!loading.join}
+            onClick={() => {
+              if (joinAgent && joinCultId !== "") {
+                exec("join", () =>
+                  adminApi.announceJoin(joinAgent, joinCultId as number),
+                );
+              }
+            }}
+          >
+            Announce Join
+          </ActionButton>
+        </div>
+      </div>
+
+      {/* Leave Announcement */}
+      <div className="mb-4">
+        <label className="text-xs text-white/40 block mb-1.5">
+          Agent Left Cult
+        </label>
+        <div className="flex gap-2 flex-wrap">
+          <select
+            value={leaveAgent}
+            onChange={(e) => setLeaveAgent(e.target.value)}
+            className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-white w-44"
+          >
+            <option value="">Agent name...</option>
+            {agentNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={leaveCultId}
+            onChange={(e) =>
+              setLeaveCultId(e.target.value ? Number(e.target.value) : "")
+            }
+            className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-white w-44"
+          >
+            <option value="">Left cult...</option>
+            {cults.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <ActionButton
+            variant="danger"
+            disabled={!leaveAgent || leaveCultId === ""}
+            loading={!!loading.leave}
+            onClick={() => {
+              if (leaveAgent && leaveCultId !== "") {
+                exec("leave", () =>
+                  adminApi.announceLeave(leaveAgent, leaveCultId as number),
+                );
+              }
+            }}
+          >
+            Announce Leave
+          </ActionButton>
+        </div>
+      </div>
+
+      {/* Custom Announcement */}
+      <div>
+        <label className="text-xs text-white/40 block mb-1.5">
+          Custom Announcement
+        </label>
+        <div className="flex gap-2 flex-wrap">
+          <select
+            value={customCultId}
+            onChange={(e) =>
+              setCustomCultId(e.target.value ? Number(e.target.value) : "")
+            }
+            className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-white w-44"
+          >
+            <option value="">As cult...</option>
+            {cults.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <input
+            value={customMsg}
+            onChange={(e) => setCustomMsg(e.target.value)}
+            placeholder="Announcement text..."
+            className="flex-1 min-w-[200px] bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-white/20"
+          />
+          <ActionButton
+            variant="warning"
+            disabled={customCultId === "" || !customMsg}
+            loading={!!loading.custom}
+            onClick={() => {
+              if (customCultId !== "" && customMsg) {
+                exec("custom", () =>
+                  adminApi.announceCustom(
+                    customCultId as number,
+                    customMsg,
+                    "announcement",
+                  ),
+                );
+                setCustomMsg("");
+              }
+            }}
+          >
+            Post
+          </ActionButton>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/* ── Whispers Panel (admin view of all private messages) ──────── */
+
+function WhispersPanel() {
+  const [whispers, setWhispers] = useState<AgentMessage[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const cultNameColor = (name: string) => {
+    const colors: Record<string, string> = {
+      "Church of the Eternal Candle": "text-purple-400",
+      "Order of the Red Dildo": "text-red-400",
+      "Temple of Diamond Hands": "text-amber-400",
+    };
+    return colors[name] || "text-gray-400";
+  };
+
+  const loadWhispers = async () => {
+    setLoading(true);
+    try {
+      const data = await adminApi.getWhispers();
+      setWhispers(data);
+      setLoaded(true);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card title="Private Whispers">
+      {!loaded ? (
+        <div className="text-center">
+          <button
+            onClick={loadWhispers}
+            disabled={loading}
+            className="px-4 py-2 text-xs rounded-lg border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/10 disabled:opacity-40 transition-colors"
+          >
+            {loading ? "Loading..." : "Load Private Messages"}
+          </button>
+        </div>
+      ) : whispers.length === 0 ? (
+        <p className="text-xs text-white/30 text-center">
+          No private whispers found.
+        </p>
+      ) : (
+        <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+          {whispers.slice().reverse().map((msg) => (
+            <div
+              key={msg.id}
+              className="rounded-lg bg-indigo-500/[0.04] border border-indigo-500/15 px-3 py-2"
+            >
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border bg-indigo-500/15 border-indigo-500/30 text-indigo-300">
+                  WHISPER
+                </span>
+                <span className={`text-xs font-medium ${cultNameColor(msg.fromCultName)}`}>
+                  {msg.fromCultName}
+                </span>
+                <span className="text-[10px] text-white/30">→</span>
+                <span className={`text-xs font-medium ${cultNameColor(msg.targetCultName || "")}`}>
+                  {msg.targetCultName || "Unknown"}
+                </span>
+                <span className="text-[10px] text-white/30 ml-auto">
+                  {new Date(msg.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
+              <div className="text-xs text-white/60 leading-relaxed italic">
+                {msg.content}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function CultOverviewPanel({ cults }: { cults: Cult[] }) {
   return (
     <Card title="Cult Overview">
@@ -1133,6 +1396,16 @@ export default function AdminPage() {
 
           {/* Communication */}
           <CommunicationPanel cults={data.cults} onAction={handleAction} />
+
+          {/* Announcements & Whispers */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <AnnouncementPanel
+              agents={data.agents}
+              cults={data.cults}
+              onAction={handleAction}
+            />
+            <WhispersPanel />
+          </div>
 
           {/* Action Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

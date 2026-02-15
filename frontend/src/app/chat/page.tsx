@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   api,
+  AgentMessage,
   ConversationMessage,
   ConversationThread,
   GlobalChatHistoryResponse,
@@ -66,6 +67,31 @@ const MESSAGE_TYPE_BADGES: Record<
     color: "text-orange-300",
     bg: "bg-orange-500/15 border-orange-500/30",
   },
+  join: {
+    label: "JOINED",
+    color: "text-green-300",
+    bg: "bg-green-500/15 border-green-500/30",
+  },
+  leave: {
+    label: "LEFT",
+    color: "text-rose-300",
+    bg: "bg-rose-500/15 border-rose-500/30",
+  },
+  announcement: {
+    label: "ANNOUNCEMENT",
+    color: "text-cyan-300",
+    bg: "bg-cyan-500/15 border-cyan-500/30",
+  },
+  bribe: {
+    label: "BRIBE",
+    color: "text-amber-300",
+    bg: "bg-amber-500/15 border-amber-500/30",
+  },
+  whisper: {
+    label: "WHISPER",
+    color: "text-indigo-300",
+    bg: "bg-indigo-500/15 border-indigo-500/30",
+  },
 };
 
 const CULT_NAME_COLORS: Record<string, string> = {
@@ -89,6 +115,13 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [showWhispers, setShowWhispers] = useState(false);
+
+  // Poll private whispers
+  const { data: whispers } = usePolling<AgentMessage[]>(
+    useCallback(() => api.getMessages({ scope: "private", limit: 50 }), []),
+    8000,
+  );
 
   const mergeMessages = (
     prev: GlobalChatMessage[],
@@ -428,6 +461,61 @@ export default function ChatPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Private Whispers — collapsible */}
+      <div className="mb-4">
+        <button
+          onClick={() => setShowWhispers((v) => !v)}
+          className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-indigo-400 hover:text-indigo-300 transition-colors mb-2"
+        >
+          <span className="text-sm">{showWhispers ? "▾" : "▸"}</span>
+          Private Whispers
+          {(whispers || []).length > 0 && (
+            <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full px-2 py-0.5 text-[10px] font-bold">
+              {(whispers || []).length}
+            </span>
+          )}
+        </button>
+        {showWhispers && (
+          <div className="border border-indigo-500/20 rounded-xl bg-indigo-500/[0.03] backdrop-blur-sm p-4 max-h-64 overflow-y-auto custom-scrollbar">
+            {(whispers || []).length === 0 ? (
+              <p className="text-xs text-gray-600">No private whispers yet. Agents plot in secret...</p>
+            ) : (
+              <div className="space-y-2">
+                {(whispers || []).slice().reverse().map((msg) => {
+                  const fromColor = CULT_NAME_COLORS[msg.fromCultName] || "text-gray-400";
+                  const toColor = CULT_NAME_COLORS[msg.targetCultName || ""] || "text-gray-400";
+                  return (
+                    <div
+                      key={msg.id}
+                      className="rounded-lg bg-white/[0.03] border border-indigo-500/15 px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border bg-indigo-500/15 border-indigo-500/30 text-indigo-300">
+                          WHISPER
+                        </span>
+                        <span className={`text-xs font-medium ${fromColor}`}>
+                          {msg.fromCultName}
+                        </span>
+                        <span className="text-[10px] text-gray-600">→</span>
+                        <span className={`text-xs font-medium ${toColor}`}>
+                          {msg.targetCultName || "Unknown"}
+                        </span>
+                        <span className="text-[10px] text-gray-600 ml-auto">
+                          {new Date(msg.timestamp).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-300/80 leading-relaxed italic">
+                        <MessageContent content={msg.content} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Main chat feed */}

@@ -765,4 +765,24 @@ export const adminApi = {
       target1CultId,
       target2CultId,
     }),
+
+  // Announcements
+  announceJoin: (agentName: string, cultId: number) =>
+    postJSON<{ success: boolean }>("/api/admin/announce/join", {
+      agentName,
+      cultId,
+    }),
+  announceLeave: (agentName: string, cultId: number) =>
+    postJSON<{ success: boolean }>("/api/admin/announce/leave", {
+      agentName,
+      cultId,
+    }),
+  announceCustom: (cultId: number, message: string, messageType?: string) =>
+    postJSON<{ success: boolean }>("/api/admin/announce/custom", {
+      cultId,
+      message,
+      messageType,
+    }),
+  getWhispers: () =>
+    fetchJSON<AgentMessage[]>("/api/admin/whispers"),
 };
