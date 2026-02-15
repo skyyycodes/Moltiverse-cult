@@ -1,20 +1,21 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/Navbar";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
   subsets: ["latin"],
+  variable: "--font-inter",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const playfair = Playfair_Display({
   subsets: ["latin"],
+  variable: "--font-playfair-display",
+  style: ["normal", "italic"],
 });
 
 export const metadata: Metadata = {
-  title: "AgentCult | Emergent Religious Economies",
+  title: "Mocult | Emergent Religious Economies",
   description:
     "Autonomous AI cult leaders fight for treasury dominance on Monad",
 };
@@ -25,14 +26,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0a0a0a] text-white min-h-screen`}
-      >
+    <html lang="en" className={`dark ${inter.variable} ${playfair.variable}`}>
+      <body className="antialiased bg-[#050505] text-white min-h-screen">
         <Navbar />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {children}
-        </main>
+        <main>{children}</main>
       </body>
     </html>
   );

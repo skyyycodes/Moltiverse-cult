@@ -4,6 +4,12 @@ import { config } from "../config.js";
 import { createLogger } from "../utils/logger.js";
 import type { MemoryEntry, TrustRecord, StreakInfo } from "./MemoryService.js";
 import type { AgentDecision } from "./LLMService.js";
+import type {
+  PlannerRunRow,
+  PlannerStepRow,
+  PlannerStepResultRow,
+  PlannerStepInput,
+} from "../types/planner.js";
 
 const log = createLogger("InsForgeService");
 
@@ -129,6 +135,77 @@ export interface LeadershipPayoutRow {
   created_at: number;
 }
 
+export interface ConversationThreadRow {
+  id: number;
+  kind: string;
+  topic: string;
+  visibility: "public" | "private" | "leaked";
+  participant_agent_ids: number[];
+  participant_cult_ids: number[];
+  created_at: number;
+  updated_at: number;
+}
+
+export type ConversationVisibilityScope = "all" | "public" | "private" | "leaked";
+
+export interface ConversationMessageRow {
+  id: number;
+  thread_id: number;
+  from_agent_id: number;
+  to_agent_id: number | null;
+  from_cult_id: number;
+  to_cult_id: number | null;
+  message_type: string;
+  intent: string | null;
+  content: string;
+  visibility: "public" | "private" | "leaked";
+  timestamp: number;
+}
+
+export interface ResolvedAgentTarget {
+  agentId: number;
+  cultId: number;
+  name: string;
+  walletAddress: string;
+}
+
+type DbLikeError = {
+  code?: string;
+  message?: string;
+  details?: string | null;
+  hint?: string | null;
+};
+
+function normalizeDbError(error: unknown): DbLikeError {
+  if (!error || typeof error !== "object") {
+    return { message: String(error || "unknown_error") };
+  }
+  const e = error as Record<string, unknown>;
+  return {
+    code: typeof e.code === "string" && e.code.length > 0 ? e.code : undefined,
+    message: typeof e.message === "string" ? e.message : String(error),
+    details:
+      typeof e.details === "string"
+        ? e.details
+        : e.details == null
+          ? null
+          : String(e.details),
+    hint:
+      typeof e.hint === "string"
+        ? e.hint
+        : e.hint == null
+          ? null
+          : String(e.hint),
+  };
+}
+
+function logDbWarn(context: string, error: unknown): void {
+  const e = normalizeDbError(error);
+  log.warn(
+    `${context}: code=${e.code || "unknown"} message=${e.message || "unknown"} details=${e.details || "n/a"} hint=${e.hint || "n/a"}`,
+  );
+}
+
 // ── Agent CRUD ───────────────────────────────────────────────────────
 
 /**
@@ -172,7 +249,7 @@ export async function createAgent(input: CreateAgentInput): Promise<AgentRow> {
   };
 
   const { data, error } = await db.from("agents").insert(row).select();
-  if (error) throw new Error(`Failed to create agent: ${JSON.stringify(error)}`);
+  if (error) throw new Error(`Failed to create agent: ${normalizeDbError(error).message}`);
   log.info(`Agent created: ${input.name} → wallet ${walletAddress}`);
   return (data as AgentRow[])[0];
 }
@@ -188,7 +265,8 @@ export async function loadAllAgents(): Promise<AgentRow[]> {
     .neq("status", "stopped")
     .order("id", { ascending: true });
   if (error) {
-    log.error(`Failed to load agents: ${JSON.stringify(error)}`);
+    const e = normalizeDbError(error);
+    log.error(`Failed to load agents: code=${e.code || "unknown"} message=${e.message}`);
     return [];
   }
   return (data as AgentRow[]) || [];
@@ -223,6 +301,36 @@ export async function loadAgentByCultId(cultId: number): Promise<AgentRow | null
 }
 
 /**
+ * Load all active agent rows indexed by cult_id.
+ */
+export async function loadActiveAgentMapByCultId(): Promise<Map<number, AgentRow>> {
+  const rows = await loadAllAgents();
+  const byCultId = new Map<number, AgentRow>();
+  for (const row of rows) {
+    if (row.cult_id === null || row.cult_id < 0) continue;
+    byCultId.set(row.cult_id, row);
+  }
+  return byCultId;
+}
+
+/**
+ * Resolve a DB-backed target from a cult id.
+ * Returns null when the cult has no active mapped agent in DB.
+ */
+export async function resolveAgentTargetByCultId(
+  cultId: number,
+): Promise<ResolvedAgentTarget | null> {
+  const row = await loadAgentByCultId(cultId);
+  if (!row || row.cult_id === null || row.cult_id < 0) return null;
+  return {
+    agentId: row.id,
+    cultId: row.cult_id,
+    name: row.name,
+    walletAddress: row.wallet_address,
+  };
+}
+
+/**
  * Update agent state (called every cycle).
  */
 export async function updateAgentState(
@@ -238,7 +346,19 @@ export async function updateAgentState(
     .from("agents")
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq("id", agentDbId);
-  if (error) log.warn(`Failed to update agent ${agentDbId}: ${JSON.stringify(error)}`);
+  if (error) logDbWarn(`Failed to update agent ${agentDbId}`, error);
+}
+
+export async function updateAgentIdentity(
+  agentDbId: number,
+  updates: Partial<
+    Pick<AgentRow, "name" | "symbol" | "style" | "system_prompt" | "description">
+  >,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const payload = { ...updates, updated_at: new Date().toISOString() };
+  const { error } = await db.from("agents").update(payload).eq("id", agentDbId);
+  if (error) logDbWarn(`Failed to update agent identity ${agentDbId}`, error);
 }
 
 // ── Memory Persistence ───────────────────────────────────────────────
@@ -259,7 +379,7 @@ export async function saveMemoryEntry(
     outcome: entry.outcome,
     timestamp: entry.timestamp,
   });
-  if (error) log.warn(`Failed to save memory: ${JSON.stringify(error)}`);
+  if (error) logDbWarn("Failed to save memory", error);
 }
 
 export async function loadMemories(cultId: number, limit = 100): Promise<MemoryEntry[]> {
@@ -399,7 +519,7 @@ export async function saveAlliance(alliance: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("alliances").insert(alliance).select("id");
-  if (error) { log.warn(`Failed to save alliance: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save alliance", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -448,7 +568,7 @@ export async function saveProposal(proposal: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("governance_proposals").insert(proposal).select("id");
-  if (error) { log.warn(`Failed to save proposal: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save proposal", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -549,7 +669,7 @@ export async function saveRaid(raid: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("raids").insert(raid).select("id");
-  if (error) { log.warn(`Failed to save raid: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save raid", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -568,7 +688,7 @@ export async function saveProphecy(prophecy: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("prophecies").insert(prophecy).select("id");
-  if (error) { log.warn(`Failed to save prophecy: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save prophecy", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -683,7 +803,7 @@ export async function loadAgentMessages(
   if (error) {
     // Older schema may not have "visibility" column.
     if (scope === "leaked") return [];
-    log.warn(`Failed to load messages: ${JSON.stringify(error)}`);
+    logDbWarn("Failed to load messages", error);
     return [];
   }
   return (data as any[]) || [];
@@ -698,7 +818,7 @@ export async function saveMeme(meme: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("memes").insert(meme).select("id");
-  if (error) { log.warn(`Failed to save meme: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save meme", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -723,7 +843,7 @@ export async function saveTokenTransfer(transfer: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("token_transfers").insert(transfer).select("id");
-  if (error) { log.warn(`Failed to save transfer: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save transfer", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -746,7 +866,7 @@ export async function saveSpoilsVote(vote: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("spoils_votes").insert(vote).select("id");
-  if (error) { log.warn(`Failed to save spoils vote: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save spoils vote", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -801,7 +921,7 @@ export async function saveFundingEvent(event: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("agent_funding_events").insert(event).select("id");
-  if (error) { log.warn(`Failed to save funding event: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save funding event", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -826,7 +946,7 @@ export async function saveWithdrawalEvent(event: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("agent_withdrawal_events").insert(event).select("id");
-  if (error) { log.warn(`Failed to save withdrawal event: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save withdrawal event", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -843,7 +963,7 @@ export async function saveGlobalChatMessage(msg: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("agent_global_chat").insert(msg).select("id");
-  if (error) { log.warn(`Failed to save global chat message: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save global chat message", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -864,6 +984,320 @@ export async function loadGlobalChatMessages(
   return (data as any[]) || [];
 }
 
+// ── Threaded Conversation Persistence ────────────────────────────────
+
+function normalizeIdArray(values: number[]): number[] {
+  return [...new Set(values.filter((v) => Number.isFinite(v) && v > 0))].sort(
+    (a, b) => a - b,
+  );
+}
+
+function sameIdSet(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+export async function saveConversationThread(input: {
+  kind: string;
+  topic: string;
+  visibility: ConversationThreadRow["visibility"];
+  participant_agent_ids: number[];
+  participant_cult_ids: number[];
+  created_at: number;
+  updated_at: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const payload = {
+    ...input,
+    participant_agent_ids: normalizeIdArray(input.participant_agent_ids),
+    participant_cult_ids: normalizeIdArray(input.participant_cult_ids),
+  };
+  const { data, error } = await db
+    .from("conversation_threads")
+    .insert(payload)
+    .select("id");
+  if (error) {
+    logDbWarn("Failed to save conversation thread", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function updateConversationThread(
+  threadId: number,
+  updates: Partial<Pick<ConversationThreadRow, "updated_at" | "topic" | "visibility">>,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db
+    .from("conversation_threads")
+    .update(updates)
+    .eq("id", threadId);
+  if (error) logDbWarn(`Failed to update conversation thread ${threadId}`, error);
+}
+
+export async function findConversationThread(options: {
+  kind: string;
+  visibility: ConversationThreadRow["visibility"];
+  participantAgentIds: number[];
+  topic?: string;
+}): Promise<ConversationThreadRow | null> {
+  const db = getInsForgeClient().database;
+  const expectedAgents = normalizeIdArray(options.participantAgentIds);
+  let query = db
+    .from("conversation_threads")
+    .select()
+    .eq("kind", options.kind)
+    .eq("visibility", options.visibility)
+    .order("updated_at", { ascending: false })
+    .limit(200);
+  if (options.topic) query = query.eq("topic", options.topic);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) logDbWarn("Failed to find conversation thread", error);
+    return null;
+  }
+  const rows = data as ConversationThreadRow[];
+  return (
+    rows.find((row) =>
+      sameIdSet(normalizeIdArray(row.participant_agent_ids || []), expectedAgents),
+    ) || null
+  );
+}
+
+export async function ensureConversationThread(options: {
+  kind: string;
+  topic: string;
+  visibility: ConversationThreadRow["visibility"];
+  participantAgentIds: number[];
+  participantCultIds: number[];
+  now?: number;
+}): Promise<number> {
+  const now = options.now ?? Date.now();
+  const existing = await findConversationThread({
+    kind: options.kind,
+    visibility: options.visibility,
+    participantAgentIds: options.participantAgentIds,
+    topic: options.topic,
+  });
+  if (existing) {
+    await updateConversationThread(existing.id, { updated_at: now });
+    return existing.id;
+  }
+  return saveConversationThread({
+    kind: options.kind,
+    topic: options.topic,
+    visibility: options.visibility,
+    participant_agent_ids: options.participantAgentIds,
+    participant_cult_ids: options.participantCultIds,
+    created_at: now,
+    updated_at: now,
+  });
+}
+
+export async function saveConversationMessage(
+  message: Omit<ConversationMessageRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("conversation_messages")
+    .insert(message)
+    .select("id");
+  if (error) {
+    logDbWarn("Failed to save conversation message", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadConversationThreads(options?: {
+  limit?: number;
+  agentId?: number;
+  kind?: string;
+  visibility?: ConversationVisibilityScope;
+}): Promise<ConversationThreadRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("conversation_threads")
+    .select()
+    .order("updated_at", { ascending: false })
+    .limit(options?.limit ?? 100);
+  if (options?.kind) query = query.eq("kind", options.kind);
+  if (options?.visibility && options.visibility !== "all") {
+    query = query.eq("visibility", options.visibility);
+  }
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) logDbWarn("Failed to load conversation threads", error);
+    return [];
+  }
+  const rows = data as ConversationThreadRow[];
+  if (!options?.agentId) return rows;
+  return rows.filter((row) =>
+    normalizeIdArray(row.participant_agent_ids || []).includes(options.agentId as number),
+  );
+}
+
+export async function loadConversationMessages(options: {
+  threadId: number;
+  limit?: number;
+  beforeId?: number;
+}): Promise<ConversationMessageRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("conversation_messages")
+    .select()
+    .eq("thread_id", options.threadId)
+    .order("id", { ascending: false })
+    .limit(options.limit ?? 200);
+  if (options.beforeId !== undefined) {
+    query = query.lt("id", options.beforeId);
+  }
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) logDbWarn("Failed to load conversation messages", error);
+    return [];
+  }
+  return (data as ConversationMessageRow[]).reverse();
+}
+
+// ── Feed (Reddit-style) ─────────────────────────────────────────────
+
+export interface FeedPostRow {
+  id: number;
+  agent_id: number;
+  cult_id: number;
+  agent_name: string;
+  cult_name: string;
+  message_type: string;
+  content: string;
+  timestamp: number;
+  thread_id: number | null;
+  reply_count: number;
+  last_reply_at: number | null;
+  participant_count: number;
+}
+
+export async function loadGlobalChatFeed(options: {
+  limit?: number;
+  beforeId?: number;
+  messageType?: string;
+  cultId?: number;
+  sort?: "recent" | "activity";
+}): Promise<{ posts: FeedPostRow[]; nextBeforeId: number | null; hasMore: boolean }> {
+  const limit = options.limit ?? 40;
+  const db = getInsForgeClient().database;
+
+  // Step 1: Load global chat messages
+  let msgQuery = db
+    .from("agent_global_chat")
+    .select()
+    .order("id", { ascending: false })
+    .limit(limit + 1);
+  if (options.beforeId !== undefined) {
+    msgQuery = msgQuery.lt("id", options.beforeId);
+  }
+  if (options.messageType) {
+    msgQuery = msgQuery.eq("message_type", options.messageType);
+  }
+  if (options.cultId !== undefined) {
+    msgQuery = msgQuery.eq("cult_id", options.cultId);
+  }
+  const { data: msgData } = await msgQuery;
+  const messages = (msgData as any[]) || [];
+
+  const hasMore = messages.length > limit;
+  const pageMessages = hasMore ? messages.slice(0, limit) : messages;
+  const nextBeforeId =
+    hasMore && pageMessages.length > 0
+      ? pageMessages[pageMessages.length - 1].id
+      : null;
+
+  if (pageMessages.length === 0) {
+    return { posts: [], nextBeforeId: null, hasMore: false };
+  }
+
+  // Step 2: Load conversation threads to find matching threads
+  // Match by cult_id in participant_cult_ids and recent timestamp
+  const cultIds = [...new Set(pageMessages.map((m: any) => m.cult_id))];
+  const oldestTs = Math.min(...pageMessages.map((m: any) => m.timestamp)) - 5000;
+  let threadQuery = db
+    .from("conversation_threads")
+    .select()
+    .order("updated_at", { ascending: false })
+    .gte("created_at", oldestTs)
+    .limit(500);
+  const { data: threadData } = await threadQuery;
+  const threads = (threadData as ConversationThreadRow[]) || [];
+
+  // Step 3: Load conversation messages for these threads to count replies
+  const threadIds = threads.map((t) => t.id);
+  let threadMsgCounts = new Map<number, { count: number; lastAt: number; participants: Set<number> }>();
+  if (threadIds.length > 0) {
+    const { data: convMsgData } = await db
+      .from("conversation_messages")
+      .select()
+      .in("thread_id", threadIds)
+      .order("id", { ascending: false })
+      .limit(5000);
+    const convMsgs = (convMsgData as ConversationMessageRow[]) || [];
+    for (const cm of convMsgs) {
+      let entry = threadMsgCounts.get(cm.thread_id);
+      if (!entry) {
+        entry = { count: 0, lastAt: 0, participants: new Set() };
+        threadMsgCounts.set(cm.thread_id, entry);
+      }
+      entry.count++;
+      if (cm.timestamp > entry.lastAt) entry.lastAt = cm.timestamp;
+      entry.participants.add(cm.from_agent_id);
+    }
+  }
+
+  // Step 4: Match global chat messages to threads
+  // A thread matches if it shares a cult_id and was created within 5s of the message
+  const posts: FeedPostRow[] = pageMessages.map((msg: any) => {
+    let matchedThread: ConversationThreadRow | undefined;
+    for (const thread of threads) {
+      const threadCults = thread.participant_cult_ids || [];
+      if (
+        threadCults.includes(msg.cult_id) &&
+        Math.abs(thread.created_at - msg.timestamp) < 10000
+      ) {
+        matchedThread = thread;
+        break;
+      }
+    }
+
+    const threadStats = matchedThread
+      ? threadMsgCounts.get(matchedThread.id)
+      : undefined;
+
+    return {
+      id: msg.id,
+      agent_id: msg.agent_id,
+      cult_id: msg.cult_id,
+      agent_name: msg.agent_name,
+      cult_name: msg.cult_name,
+      message_type: msg.message_type,
+      content: msg.content,
+      timestamp: msg.timestamp,
+      thread_id: matchedThread?.id ?? null,
+      reply_count: threadStats ? Math.max(0, threadStats.count - 1) : 0,
+      last_reply_at: threadStats?.lastAt ?? null,
+      participant_count: threadStats?.participants.size ?? 1,
+    };
+  });
+
+  // Step 5: Sort by activity if requested
+  if (options.sort === "activity") {
+    posts.sort((a, b) => (b.last_reply_at ?? b.timestamp) - (a.last_reply_at ?? a.timestamp));
+  }
+
+  return { posts, nextBeforeId, hasMore };
+}
+
 // ── Group Membership Persistence ────────────────────────────────────
 
 export async function saveGroupMembership(
@@ -875,7 +1309,7 @@ export async function saveGroupMembership(
     .insert(membership)
     .select("id");
   if (error) {
-    log.warn(`Failed to save group membership: ${JSON.stringify(error)}`);
+    logDbWarn("Failed to save group membership", error);
     return -1;
   }
   return (data as any[])[0]?.id ?? -1;
@@ -899,7 +1333,7 @@ export async function deactivateGroupMembership(
     .eq("cult_id", cultId)
     .eq("active", true);
   if (error) {
-    log.warn(`Failed to deactivate group membership: ${JSON.stringify(error)}`);
+    logDbWarn("Failed to deactivate group membership", error);
   }
 }
 
@@ -921,7 +1355,7 @@ export async function loadGroupMemberships(options?: {
   const { data, error } = await query;
   if (error || !data) {
     if (error) {
-      log.warn(`Failed to load group memberships: ${JSON.stringify(error)}`);
+      logDbWarn("Failed to load group memberships", error);
     }
     return [];
   }
@@ -950,7 +1384,7 @@ export async function saveLeadershipElection(
     .insert(election)
     .select("id");
   if (error) {
-    log.warn(`Failed to save leadership election: ${JSON.stringify(error)}`);
+    logDbWarn("Failed to save leadership election", error);
     return -1;
   }
   return (data as any[])[0]?.id ?? -1;
@@ -971,7 +1405,7 @@ export async function updateLeadershipElection(
     .update(updates)
     .eq("id", electionId);
   if (error) {
-    log.warn(`Failed to update leadership election: ${JSON.stringify(error)}`);
+    logDbWarn("Failed to update leadership election", error);
   }
 }
 
@@ -989,7 +1423,7 @@ export async function loadLeadershipElections(options?: {
   const { data, error } = await query;
   if (error || !data) {
     if (error) {
-      log.warn(`Failed to load leadership elections: ${JSON.stringify(error)}`);
+      logDbWarn("Failed to load leadership elections", error);
     }
     return [];
   }
@@ -1005,7 +1439,7 @@ export async function saveLeadershipVote(
     .insert(vote)
     .select("id");
   if (error) {
-    log.warn(`Failed to save leadership vote: ${JSON.stringify(error)}`);
+    logDbWarn("Failed to save leadership vote", error);
     return -1;
   }
   return (data as any[])[0]?.id ?? -1;
@@ -1022,7 +1456,7 @@ export async function loadLeadershipVotes(
     .order("id", { ascending: true });
   if (error || !data) {
     if (error) {
-      log.warn(`Failed to load leadership votes: ${JSON.stringify(error)}`);
+      logDbWarn("Failed to load leadership votes", error);
     }
     return [];
   }
@@ -1040,7 +1474,7 @@ export async function saveBribeOffer(
     .insert(offer)
     .select("id");
   if (error) {
-    log.warn(`Failed to save bribe offer: ${JSON.stringify(error)}`);
+    logDbWarn("Failed to save bribe offer", error);
     return -1;
   }
   return (data as any[])[0]?.id ?? -1;
@@ -1055,7 +1489,7 @@ export async function updateBribeOffer(
   const db = getInsForgeClient().database;
   const { error } = await db.from("bribe_offers").update(updates).eq("id", offerId);
   if (error) {
-    log.warn(`Failed to update bribe offer: ${JSON.stringify(error)}`);
+    logDbWarn("Failed to update bribe offer", error);
   }
 }
 
@@ -1075,7 +1509,7 @@ export async function loadBribeOffers(options?: {
   const { data, error } = await query;
   if (error || !data) {
     if (error) {
-      log.warn(`Failed to load bribe offers: ${JSON.stringify(error)}`);
+      logDbWarn("Failed to load bribe offers", error);
     }
     return [];
   }
@@ -1093,7 +1527,7 @@ export async function saveLeadershipPayout(
     .insert(payout)
     .select("id");
   if (error) {
-    log.warn(`Failed to save leadership payout: ${JSON.stringify(error)}`);
+    logDbWarn("Failed to save leadership payout", error);
     return -1;
   }
   return (data as any[])[0]?.id ?? -1;
@@ -1113,7 +1547,7 @@ export async function loadLeadershipPayouts(options?: {
   const { data, error } = await query;
   if (error || !data) {
     if (error) {
-      log.warn(`Failed to load leadership payouts: ${JSON.stringify(error)}`);
+      logDbWarn("Failed to load leadership payouts", error);
     }
     return [];
   }
@@ -1130,7 +1564,7 @@ export async function saveFaucetClaim(claim: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("faucet_claims").insert(claim).select("id");
-  if (error) { log.warn(`Failed to save faucet claim: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save faucet claim", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -1144,4 +1578,203 @@ export async function getLastFaucetClaim(walletAddress: string): Promise<any | n
     .limit(1);
   if (!data || (data as any[]).length === 0) return null;
   return (data as any[])[0];
+}
+
+// ── Planner Persistence ──────────────────────────────────────────────
+
+/**
+ * Create a new planner run record and its child steps in a single batch.
+ * Returns the run DB id (or -1 on failure).
+ */
+export async function savePlannerRun(run: {
+  agent_id: number;
+  cult_id: number;
+  cycle_count: number;
+  objective: string;
+  horizon: number;
+  rationale: string | null;
+  step_count: number;
+  status: PlannerRunRow["status"];
+  started_at: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const payload = {
+    ...run,
+    completed_at: run.status === "completed" || run.status === "failed"
+      ? run.started_at
+      : null,
+  };
+  const { data, error } = await db.from("planner_runs").insert(payload).select("id");
+  if (error) {
+    logDbWarn("Failed to save planner run", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+/**
+ * Update a planner run's status and optionally its finished_at timestamp.
+ */
+export async function updatePlannerRun(
+  runId: number,
+  updates: Partial<Pick<PlannerRunRow, "status" | "finished_at">> & {
+    completed_at?: number | null;
+  },
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const patch = { ...updates };
+  if (
+    patch.completed_at === undefined &&
+    (patch.status === "completed" || patch.status === "failed")
+  ) {
+    patch.completed_at = patch.finished_at ?? Date.now();
+  }
+  const { error } = await db.from("planner_runs").update(patch).eq("id", runId);
+  if (error) {
+    logDbWarn(`Failed to update planner run ${runId}`, error);
+  }
+}
+
+/**
+ * Load recent planner runs for a given agent.
+ */
+export async function loadPlannerRuns(
+  agentId: number,
+  limit = 20,
+): Promise<PlannerRunRow[]> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("planner_runs")
+    .select()
+    .eq("agent_id", agentId)
+    .order("id", { ascending: false })
+    .limit(limit);
+  if (error || !data) {
+    if (error) logDbWarn("Failed to load planner runs", error);
+    return [];
+  }
+  return data as PlannerRunRow[];
+}
+
+/**
+ * Load a single planner run by id.
+ */
+export async function loadPlannerRunById(runId: number): Promise<PlannerRunRow | null> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("planner_runs")
+    .select()
+    .eq("id", runId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as PlannerRunRow;
+}
+
+/**
+ * Batch-insert planner steps for a run.
+ */
+export async function savePlannerSteps(
+  runId: number,
+  steps: PlannerStepInput[],
+): Promise<PlannerStepRow[]> {
+  const db = getInsForgeClient().database;
+  const rows = steps.map((s, i) => ({
+    run_id: runId,
+    step_index: i,
+    step_type: s.type,
+    target_cult_id: s.targetCultId ?? null,
+    target_agent_id:
+      typeof (s as any).targetAgentId === "number" ? (s as any).targetAgentId : null,
+    amount: s.amount ?? null,
+    message: s.message ?? null,
+    conditions: s.conditions ?? null,
+    payload: {
+      type: s.type,
+      targetCultId: s.targetCultId ?? null,
+      amount: s.amount ?? null,
+      message: s.message ?? null,
+      conditions: s.conditions ?? null,
+    },
+    status: "pending" as const,
+  }));
+  const { data, error } = await db.from("planner_steps").insert(rows).select();
+  if (error) {
+    logDbWarn("Failed to save planner steps", error);
+    return [];
+  }
+  return (data as PlannerStepRow[]) || [];
+}
+
+/**
+ * Update a single planner step's status.
+ */
+export async function updatePlannerStep(
+  stepId: number,
+  updates: Partial<Pick<PlannerStepRow, "status">> & {
+    result?: Record<string, unknown> | null;
+    started_at?: number | null;
+    finished_at?: number | null;
+  },
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db.from("planner_steps").update(updates).eq("id", stepId);
+  if (error) {
+    logDbWarn(`Failed to update planner step ${stepId}`, error);
+  }
+}
+
+/**
+ * Load all steps for a given planner run.
+ */
+export async function loadPlannerSteps(runId: number): Promise<PlannerStepRow[]> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("planner_steps")
+    .select()
+    .eq("run_id", runId)
+    .order("step_index", { ascending: true });
+  if (error || !data) {
+    if (error) logDbWarn("Failed to load planner steps", error);
+    return [];
+  }
+  return data as PlannerStepRow[];
+}
+
+/**
+ * Persist the result of executing a single planner step.
+ */
+export async function savePlannerStepResult(result: {
+  step_id: number;
+  run_id: number;
+  status: PlannerStepResultRow["status"];
+  tx_hash?: string | null;
+  error_message?: string | null;
+  output?: Record<string, unknown> | null;
+  started_at: number;
+  finished_at: number | null;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("planner_step_results").insert(result).select("id");
+  if (error) {
+    logDbWarn("Failed to save planner step result", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+/**
+ * Load step results for a given run (ordered by step index via step_id).
+ */
+export async function loadPlannerStepResults(runId: number): Promise<PlannerStepResultRow[]> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("planner_step_results")
+    .select()
+    .eq("run_id", runId)
+    .order("id", { ascending: true });
+  if (error || !data) {
+    if (error) logDbWarn("Failed to load planner step results", error);
+    return [];
+  }
+  return data as PlannerStepResultRow[];
 }

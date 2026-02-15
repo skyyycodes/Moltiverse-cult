@@ -2,8 +2,11 @@ import { Router, Request, Response } from "express";
 import { createLogger } from "../../utils/logger.js";
 import { broadcastEvent } from "../server.js";
 import {
+  loadConversationMessages,
+  loadConversationThreads,
   saveGlobalChatMessage,
   loadGlobalChatMessages,
+  loadGlobalChatFeed,
 } from "../../services/InsForgeService.js";
 import type { AgentOrchestrator } from "../../core/AgentOrchestrator.js";
 
@@ -29,6 +32,31 @@ export function chatRoutes(orchestrator: AgentOrchestrator): Router {
     const n = Number.parseInt(String(raw), 10);
     return Number.isFinite(n) && n > 0 ? n : undefined;
   };
+
+  const parseVisibility = (
+    raw: unknown,
+  ): "all" | "public" | "private" | "leaked" => {
+    const value = String(raw || "all").toLowerCase();
+    if (value === "public" || value === "private" || value === "leaked") {
+      return value;
+    }
+    return "all";
+  };
+
+  // GET /api/chat/feed — Reddit-style enriched feed
+  router.get("/feed", async (req: Request, res: Response) => {
+    try {
+      const limit = parseLimit(req.query.limit, 40);
+      const beforeId = parseBeforeId(req.query.beforeId);
+      const messageType = req.query.messageType ? String(req.query.messageType) : undefined;
+      const cultId = req.query.cultId !== undefined ? Number(req.query.cultId) : undefined;
+      const sort = req.query.sort === "activity" ? "activity" as const : "recent" as const;
+      const result = await loadGlobalChatFeed({ limit, beforeId, messageType, cultId: Number.isFinite(cultId) ? cultId : undefined, sort });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // GET /api/chat — fetch recent messages (paginated)
   router.get("/", async (req: Request, res: Response) => {
@@ -62,6 +90,44 @@ export function chatRoutes(orchestrator: AgentOrchestrator): Router {
         nextBeforeId,
         hasMore,
       });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/chat/threads — threaded conversation overview
+  router.get("/threads", async (req: Request, res: Response) => {
+    try {
+      const limit = parseLimit(req.query.limit, 100);
+      const agentIdRaw = req.query.agentId;
+      const agentId =
+        agentIdRaw !== undefined ? Number.parseInt(String(agentIdRaw), 10) : undefined;
+      const kind = req.query.kind ? String(req.query.kind) : undefined;
+      const visibility = parseVisibility(req.query.visibility);
+      const rows = await loadConversationThreads({
+        limit,
+        agentId: Number.isFinite(agentId as number) ? agentId : undefined,
+        kind,
+        visibility,
+      });
+      res.json(rows);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/chat/threads/:threadId/messages — thread message timeline
+  router.get("/threads/:threadId/messages", async (req: Request, res: Response) => {
+    const threadId = Number.parseInt(req.params.threadId as string, 10);
+    if (!Number.isFinite(threadId) || threadId <= 0) {
+      res.status(400).json({ error: "Invalid thread id" });
+      return;
+    }
+    try {
+      const limit = parseLimit(req.query.limit, 200);
+      const beforeId = parseBeforeId(req.query.beforeId);
+      const messages = await loadConversationMessages({ threadId, limit, beforeId });
+      res.json(messages);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

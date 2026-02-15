@@ -174,9 +174,34 @@ export interface DefectionEvent {
   timestamp: number;
 }
 
+export type CultScope = "managed" | "all";
+
 export const api = {
-  getStats: () => fetchJSON<Stats>("/api/stats"),
-  getCults: () => fetchJSON<Cult[]>("/api/cults"),
+  getStats: (options?: { scope?: CultScope }) => {
+    const params = new URLSearchParams();
+    params.set("scope", options?.scope || "all");
+    return fetchJSON<Stats>(`/api/stats?${params.toString()}`);
+  },
+  getCults: (options?: { scope?: CultScope }) => {
+    const params = new URLSearchParams();
+    params.set("scope", options?.scope || "all");
+    return fetchJSON<Cult[]>(`/api/cults?${params.toString()}`);
+  },
+  getCultsLeaderboard: (options?: { scope?: CultScope }) => {
+    const params = new URLSearchParams();
+    params.set("scope", options?.scope || "all");
+    return fetchJSON<
+      Array<{
+        rank: number;
+        id: number;
+        name: string;
+        treasury: string;
+        followers: number;
+        raidWins: number;
+        raidLosses: number;
+      }>
+    >(`/api/cults/leaderboard?${params.toString()}`);
+  },
   getCult: (id: number) =>
     fetchJSON<Cult & { prophecies: Prophecy[]; raids: Raid[] }>(
       `/api/cults/${id}`,
@@ -269,6 +294,15 @@ export const api = {
 
   listManagedAgents: () =>
     fetchJSON<ManagedAgent[]>("/api/agents/management/list"),
+  applyPersonalities: () =>
+    postJSON<{
+      success: boolean;
+      applied: number;
+      skipped: number;
+      totalAgents: number;
+      totalPersonalities: number;
+      updates: Array<{ agentId: number; name: string; cultId: number | null }>;
+    }>("/api/agents/management/apply-personalities", {}),
 
   getAgentBalance: (id: number) =>
     fetchJSON<AgentBalance>(`/api/agents/management/${id}/balance`),
@@ -293,6 +327,24 @@ export const api = {
       `/api/agents/management/faucet-status/${walletAddress}`,
     ),
 
+  // ── Chat Feed (Reddit-style) ────────────────────────────────────
+  getChatFeed: (options?: {
+    limit?: number;
+    beforeId?: number;
+    messageType?: string;
+    cultId?: number;
+    sort?: "recent" | "activity";
+  }) => {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.beforeId !== undefined) params.set("beforeId", String(options.beforeId));
+    if (options?.messageType) params.set("messageType", options.messageType);
+    if (options?.cultId !== undefined) params.set("cultId", String(options.cultId));
+    if (options?.sort) params.set("sort", options.sort);
+    const qs = params.toString();
+    return fetchJSON<FeedResponse>(`/api/chat/feed${qs ? `?${qs}` : ""}`);
+  },
+
   // ── Global Chat ─────────────────────────────────────────────────
   getGlobalChat: (limit = 100, beforeId?: number) => {
     const params = new URLSearchParams();
@@ -308,6 +360,33 @@ export const api = {
       `/api/chat/history?${params.toString()}`,
     );
   },
+  getChatThreads: (options?: {
+    limit?: number;
+    agentId?: number;
+    kind?: string;
+    visibility?: "all" | "public" | "private" | "leaked";
+  }) => {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.agentId !== undefined) params.set("agentId", String(options.agentId));
+    if (options?.kind) params.set("kind", options.kind);
+    if (options?.visibility) params.set("visibility", options.visibility);
+    const qs = params.toString();
+    return fetchJSON<ConversationThread[]>(`/api/chat/threads${qs ? `?${qs}` : ""}`);
+  },
+  getThreadMessages: (threadId: number, options?: { limit?: number; beforeId?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.beforeId !== undefined) params.set("beforeId", String(options.beforeId));
+    const qs = params.toString();
+    return fetchJSON<ConversationMessage[]>(
+      `/api/chat/threads/${threadId}/messages${qs ? `?${qs}` : ""}`,
+    );
+  },
+  getAgentPlans: (agentId: number, limit = 20) =>
+    fetchJSON<PlannerRun[]>(`/api/agents/${agentId}/plans?limit=${limit}`),
+  getAgentPlanSteps: (agentId: number, planId: number) =>
+    fetchJSON<PlannerStep[]>(`/api/agents/${agentId}/plans/${planId}/steps`),
 };
 
 // ── POST helper ───────────────────────────────────────────────────
@@ -385,6 +464,83 @@ export interface GlobalChatHistoryResponse {
   hasMore: boolean;
 }
 
+export interface ConversationThread {
+  id: number;
+  kind: string;
+  topic: string;
+  visibility: "public" | "private" | "leaked";
+  participant_agent_ids: number[];
+  participant_cult_ids: number[];
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ConversationMessage {
+  id: number;
+  thread_id: number;
+  from_agent_id: number;
+  to_agent_id: number | null;
+  from_cult_id: number;
+  to_cult_id: number | null;
+  message_type: string;
+  intent: string | null;
+  content: string;
+  visibility: "public" | "private" | "leaked";
+  timestamp: number;
+}
+
+export interface FeedPost {
+  id: number;
+  agent_id: number;
+  cult_id: number;
+  agent_name: string;
+  cult_name: string;
+  message_type: string;
+  content: string;
+  timestamp: number;
+  thread_id: number | null;
+  reply_count: number;
+  last_reply_at: number | null;
+  participant_count: number;
+}
+
+export interface FeedResponse {
+  posts: FeedPost[];
+  nextBeforeId: number | null;
+  hasMore: boolean;
+}
+
+export interface PlannerRun {
+  id: number;
+  agent_id: number;
+  cult_id: number;
+  cycle_count: number;
+  objective: string;
+  horizon: number;
+  rationale: string | null;
+  step_count: number;
+  status: string;
+  started_at: number;
+  finished_at: number | null;
+}
+
+export interface PlannerStep {
+  id: number;
+  run_id: number;
+  step_index: number;
+  step_type: string;
+  target_cult_id: number | null;
+  target_agent_id?: number | null;
+  amount?: string | null;
+  message?: string | null;
+  conditions?: string | null;
+  payload?: Record<string, unknown>;
+  status: string;
+  result?: Record<string, unknown> | null;
+  started_at?: number | null;
+  finished_at?: number | null;
+}
+
 export interface GroupMember {
   id: number;
   agentId: number;
@@ -424,6 +580,9 @@ export interface LeadershipState {
   roundIndex: number;
   electionId: number | null;
   updatedAtCycle: number;
+  nextElectionCycle?: number | null;
+  currentCycle?: number;
+  etaCycles?: number | null;
 }
 
 export interface BribeOffer {
@@ -438,6 +597,8 @@ export interface BribeOffer {
   accepted_at: number | null;
   expires_at: number | null;
   createdAt: number;
+  transferTxHash?: string | null;
+  transferStatus?: "confirmed" | "failed" | "unknown";
 }
 
 export interface ManagedAgent {

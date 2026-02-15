@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { config } from "../config.js";
 import { createLogger } from "../utils/logger.js";
 import { saveLLMDecision } from "./InsForgeService.js";
+import type { PlannerPlan, PlannerStepType } from "../types/planner.js";
 
 const log = createLogger("LLMService");
 
@@ -37,7 +38,7 @@ interface LLMRetryTrace {
 export class LLMService {
   private client: OpenAI;
   private model: string;
-  private static readonly RETRY_MAX_TOKENS = [500, 900, 1400] as const;
+  private static readonly RETRY_MAX_TOKENS = [2000, 4000, 8000] as const;
 
   /** Agent DB id for decision audit trail (0 = shared/default) */
   public agentDbId: number = 0;
@@ -328,7 +329,11 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
           content: `Write a persuasive scripture about: ${topic}`,
         },
       ], 0.4);
-      if (content.length > 0) return content;
+      if (content.length > 0) {
+        const sanitized = content.trim();
+        if (!this.isRefusalBoilerplate(sanitized)) return sanitized;
+        log.warn(`Scripture generation returned refusal boilerplate for ${cultName}`);
+      }
 
       log.warn(`Scripture generation empty after retries: ${this.formatRetryTrace(trace)}`);
       return "Join us, for the candles never lie.";
@@ -336,6 +341,30 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
       log.error(`Scripture generation failed: ${error.message}`);
       return `The ${cultName} welcomes all who seek the truth of the markets.`;
     }
+  }
+
+  private isRefusalBoilerplate(content: string): boolean {
+    const normalized = content
+      .toLowerCase()
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!normalized) return true;
+
+    const refusalMarkers = [
+      "i'm sorry",
+      "i am sorry",
+      "i can't help with that",
+      "i cannot help with that",
+      "i can't assist with that",
+      "i cannot assist with that",
+      "as an ai",
+      "i'm unable to",
+      "i am unable to",
+      "i can't comply with that",
+      "i cannot comply with that",
+    ];
+    return refusalMarkers.some((marker) => normalized.includes(marker));
   }
 
   private fallbackProphecy(cultName: string): string {
@@ -350,5 +379,129 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
       "Three red candles precede the dawn. This is the final test of faith.",
     ];
     return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+  }
+
+  // ── Planner: multi-step plan generation ────────────────────────────
+
+  private static readonly ALLOWED_STEP_TYPES: PlannerStepType[] = [
+    "talk_public", "talk_private", "ally", "betray", "bribe",
+    "raid", "recruit", "govern", "coup", "leak", "meme", "wait", "idle",
+  ];
+
+  /**
+   * Generate a multi-step plan for one agent cycle.
+   */
+  async generatePlan(
+    systemPrompt: string,
+    cultName: string,
+    context: {
+      ownTreasury: number;
+      ownFollowers: number;
+      ownRaidWins: number;
+      rivals: Array<{ id: number; name: string; treasury: number; followers: number; raidWins: number }>;
+      marketTrend: string;
+      memoryContext?: string;
+      activeThreadsSummary?: string;
+      trustGraph?: string;
+    },
+    cycleCount: number,
+  ): Promise<PlannerPlan> {
+    const memorySection = context.memoryContext
+      ? `\n\nYour memory of past interactions:\n${context.memoryContext}`
+      : "";
+    const threadSection = context.activeThreadsSummary
+      ? `\n\nActive conversation threads:\n${context.activeThreadsSummary}`
+      : "";
+    const trustSection = context.trustGraph
+      ? `\n\nTrust scores with other cults:\n${context.trustGraph}`
+      : "";
+
+    try {
+      const { data, raw, trace } = await this.requestJsonWithRetry<{
+        objective: string;
+        horizon: number;
+        rationale: string;
+        steps: Array<{
+          type: string;
+          targetCultId?: number;
+          amount?: string;
+          message?: string;
+          conditions?: string;
+        }>;
+      }>([
+        {
+          role: "system",
+          content: `${systemPrompt}\n\nYou are "${cultName}". Plan 2-4 steps. Allowed: ${LLMService.ALLOWED_STEP_TYPES.join(", ")}.\n\nRESPOND WITH ONLY THIS JSON (no other text):\n{"objective":"string","horizon":2-4,"rationale":"brief","steps":[{"type":"step_type","targetCultId":number,"amount":"0.1","message":"brief"}]}`,
+        },
+        {
+          role: "user",
+          content: `Cycle ${cycleCount}. Treasury: ${context.ownTreasury} MON. Followers: ${context.ownFollowers}. Wins: ${context.ownRaidWins}. Market: ${context.marketTrend}.${memorySection}${threadSection}${trustSection}\n\nRivals:\n${context.rivals.map((r) => `[${r.id}] ${r.name}: ${r.treasury}MON, ${r.followers}F, ${r.raidWins}W`).join("\n")}\n\nJSON only:`,
+        },
+      ], 0.3);
+
+      if (data && Array.isArray(data.steps) && data.steps.length > 0) {
+        // Log the LLM response
+        log.info(`🤖 LLM PLAN for ${cultName}:`);
+        log.info(`  Objective: ${data.objective}`);
+        log.info(`  Horizon: ${data.horizon}`);
+        log.info(`  Rationale: ${data.rationale}`);
+        log.info(`  Steps (${data.steps.length}):`);
+        data.steps.slice(0, 5).forEach((s, i) => {
+          const details = s.targetCultId ? ` → Cult #${s.targetCultId}` : '';
+          const amt = s.amount ? ` (${s.amount})` : '';
+          const msg = s.message ? ` "${s.message.slice(0, 40)}..."` : '';
+          log.info(`    ${i + 1}. ${s.type}${details}${amt}${msg}`);
+        });
+        
+        // Validate step types
+        const validSteps = data.steps
+          .slice(0, 5) // cap at 5 steps
+          .map((s) => ({
+            type: (LLMService.ALLOWED_STEP_TYPES.includes(s.type as PlannerStepType)
+              ? s.type
+              : "idle") as PlannerStepType,
+            targetCultId: s.targetCultId ?? undefined,
+            amount: s.amount ?? undefined,
+            message: s.message ?? undefined,
+            conditions: s.conditions ?? undefined,
+          }));
+
+        const plan: PlannerPlan = {
+          objective: data.objective || "Execute cycle strategy",
+          horizon: validSteps.length,
+          rationale: data.rationale || "",
+          steps: validSteps,
+        };
+
+        // Persist for audit trail (fire-and-forget)
+        saveLLMDecision(this.agentDbId, this.cultId, {
+          action: "idle",
+          reason: `planner: ${plan.objective}`,
+        }, cycleCount, { raw, plan }).catch(() => {});
+
+        return plan;
+      }
+
+      log.warn(`Plan JSON parse failed after retries: ${this.formatRetryTrace(trace)}`);
+      return this.fallbackPlan(cycleCount);
+    } catch (error: any) {
+      log.error(`Plan generation failed: ${error.message}`);
+      return this.fallbackPlan(cycleCount);
+    }
+  }
+
+  /**
+   * Fallback plan when LLM is unavailable.
+   */
+  private fallbackPlan(cycleCount: number): PlannerPlan {
+    return {
+      objective: "Maintain presence (LLM unavailable)",
+      horizon: 2,
+      rationale: "LLM fallback — observe and wait",
+      steps: [
+        { type: "wait", conditions: `fallback_cycle_${cycleCount}` },
+        { type: "wait" },
+      ],
+    };
   }
 }
