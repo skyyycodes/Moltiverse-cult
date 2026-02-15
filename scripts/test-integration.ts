@@ -136,6 +136,20 @@ function assertIncludes(name: string, arr: string[], value: string) {
   assert(name, arr.includes(value), `one of [${arr.join(", ")}]`, value);
 }
 
+async function waitForTxWithTimeout(
+  txPromise: Promise<any> | any,
+  label: string,
+  timeoutMs = 90000,
+) {
+  const tx = await txPromise;
+  return await Promise.race([
+    tx.wait(),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs),
+    ),
+  ]);
+}
+
 // ── InsForge DB Client ──────────────────────────────────────────────
 import { createClient } from "@insforge/sdk";
 
@@ -1244,7 +1258,7 @@ async function suite7_GovernanceOnChain() {
   try {
     const descHash = ethers.keccak256(ethers.toUtf8Bytes("Test budget: aggressive expansion"));
     const tx = await gov.createProposal(cultId, 40, 30, 20, 10, descHash);
-    const receipt = await tx.wait();
+    const receipt = await waitForTxWithTimeout(tx, "suite7.createProposal", 120000);
 
     const event = receipt.logs.find((l: any) => {
       try { return gov.interface.parseLog({ topics: l.topics, data: l.data })?.name === "ProposalCreated"; } catch { return false; }
@@ -1265,7 +1279,7 @@ async function suite7_GovernanceOnChain() {
   if (proposalId >= 0) {
     try {
       const txVote = await gov.castVote(proposalId, true, 5);
-      await txVote.wait();
+      await waitForTxWithTimeout(txVote, "suite7.castVote", 120000);
       pass("Vote cast on-chain", `proposal=${proposalId}, support=true, weight=5`);
 
       // Read back proposal
@@ -1284,7 +1298,7 @@ async function suite7_GovernanceOnChain() {
   try {
     // This may revert due to permissions/conditions — that's also a valid test
     const tx = await gov.proposeCoup(cultId, 10000, 1000);
-    const receipt = await tx.wait();
+    const receipt = await waitForTxWithTimeout(tx, "suite7.proposeCoup", 120000);
     pass("Coup tx submitted", `tx: ${tx.hash.slice(0, 18)}...`);
   } catch (err: any) {
     // Expected to fail if conditions aren't met — verify it's a revert, not connectivity

@@ -17,6 +17,7 @@ import { EvolutionService } from "../services/EvolutionService.js";
 import { MarketService } from "../services/MarketService.js";
 import { RandomnessService } from "../services/RandomnessService.js";
 import { GroupGovernanceService } from "../services/GroupGovernanceService.js";
+import { PlannerService } from "../services/PlannerService.js";
 import { CultAgent, AgentState } from "./CultAgent.js";
 import { loadPersonalities, Personality } from "./AgentPersonality.js";
 import { createLogger } from "../utils/logger.js";
@@ -217,6 +218,7 @@ export class AgentOrchestrator {
       this.defectionService,
       this.groupGovernanceService,
       this.randomnessService,
+      new PlannerService(agentLlm),
     );
 
     // Set the agent's DB id so it can persist state

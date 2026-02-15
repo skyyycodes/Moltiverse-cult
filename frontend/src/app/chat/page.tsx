@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { api, GlobalChatHistoryResponse, GlobalChatMessage } from "@/lib/api";
+import {
+  api,
+  ConversationMessage,
+  ConversationThread,
+  GlobalChatHistoryResponse,
+  GlobalChatMessage,
+} from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { API_BASE } from "@/lib/constants";
 
@@ -33,6 +39,10 @@ const MESSAGE_TYPE_COLORS: Record<string, string> = {
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<GlobalChatMessage[]>([]);
+  const [threads, setThreads] = useState<ConversationThread[]>([]);
+  const [selectedThreadId, setSelectedThreadId] = useState<number | null>(null);
+  const [threadMessages, setThreadMessages] = useState<ConversationMessage[]>([]);
+  const [loadingThreadMessages, setLoadingThreadMessages] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
   const [nextBeforeId, setNextBeforeId] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -71,6 +81,48 @@ export default function ChatPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const refreshThreads = async () => {
+      try {
+        const rows = await api.getChatThreads({ limit: 50 });
+        if (cancelled) return;
+        setThreads(rows);
+        if (rows.length > 0 && selectedThreadId === null) {
+          setSelectedThreadId(rows[0].id);
+        }
+      } catch {
+        // ignore fetch errors
+      }
+    };
+    refreshThreads();
+    const timer = setInterval(refreshThreads, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (selectedThreadId === null) {
+      setThreadMessages([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingThreadMessages(true);
+    api
+      .getThreadMessages(selectedThreadId, { limit: 200 })
+      .then((rows) => {
+        if (!cancelled) setThreadMessages(rows);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingThreadMessages(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedThreadId]);
+
   // Initial load via polling (fallback & catch-up)
   const { data: polledMessages } = usePolling<GlobalChatMessage[]>(
     useCallback(() => api.getGlobalChat(200), []),
@@ -96,6 +148,48 @@ export default function ChatPage() {
       try {
         const msg = JSON.parse(e.data) as GlobalChatMessage;
         setMessages((prev) => mergeMessages(prev, [msg]));
+      } catch {
+        // ignore parse errors
+      }
+    });
+
+    eventSource.addEventListener("conversation_message", (e) => {
+      try {
+        const row = JSON.parse(e.data) as {
+          id: number;
+          threadId: number;
+          fromAgentId: number;
+          toAgentId: number | null;
+          fromCultId: number;
+          toCultId: number | null;
+          messageType: string;
+          intent: string | null;
+          content: string;
+          visibility: "public" | "private" | "leaked";
+          timestamp: number;
+        };
+        if (selectedThreadId === row.threadId) {
+          setThreadMessages((prev) => {
+            const next: ConversationMessage[] = [
+              ...prev,
+              {
+                id: row.id,
+                thread_id: row.threadId,
+                from_agent_id: row.fromAgentId,
+                to_agent_id: row.toAgentId,
+                from_cult_id: row.fromCultId,
+                to_cult_id: row.toCultId,
+                message_type: row.messageType,
+                intent: row.intent,
+                content: row.content,
+                visibility: row.visibility,
+                timestamp: row.timestamp,
+              },
+            ];
+            next.sort((a, b) => a.timestamp - b.timestamp);
+            return next;
+          });
+        }
       } catch {
         // ignore parse errors
       }
@@ -178,6 +272,60 @@ export default function ChatPage() {
       </div>
 
       {/* Chat container */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        <div className="border border-gray-800 rounded-xl bg-[#0d0d0d] p-3 max-h-60 overflow-y-auto">
+          <h2 className="text-sm font-semibold text-gray-300 mb-2">
+            Conversation Threads
+          </h2>
+          {threads.length === 0 ? (
+            <p className="text-xs text-gray-500">No threads yet.</p>
+          ) : (
+            <div className="space-y-1">
+              {threads.map((thread) => (
+                <button
+                  key={thread.id}
+                  onClick={() => setSelectedThreadId(thread.id)}
+                  className={`w-full text-left px-2 py-1.5 rounded text-xs border ${
+                    selectedThreadId === thread.id
+                      ? "border-purple-500 bg-purple-900/20 text-purple-200"
+                      : "border-gray-800 text-gray-300 hover:bg-gray-900"
+                  }`}
+                >
+                  <div className="font-medium">{thread.topic}</div>
+                  <div className="text-[10px] text-gray-500">
+                    {thread.kind} • {thread.visibility}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="lg:col-span-2 border border-gray-800 rounded-xl bg-[#0d0d0d] p-3 max-h-60 overflow-y-auto">
+          <h2 className="text-sm font-semibold text-gray-300 mb-2">
+            Thread Messages
+          </h2>
+          {loadingThreadMessages ? (
+            <p className="text-xs text-gray-500">Loading thread...</p>
+          ) : threadMessages.length === 0 ? (
+            <p className="text-xs text-gray-500">Select a thread to inspect messages.</p>
+          ) : (
+            <div className="space-y-1">
+              {threadMessages.slice(-80).map((msg) => (
+                <div
+                  key={msg.id}
+                  className="text-xs rounded border border-gray-800 px-2 py-1 text-gray-300"
+                >
+                  <div className="text-[10px] text-gray-500">
+                    [{msg.message_type}] {new Date(msg.timestamp).toLocaleTimeString()}
+                  </div>
+                  <div>{msg.content}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div
         ref={containerRef}
         onScroll={handleScroll}

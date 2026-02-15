@@ -19,10 +19,13 @@ import { MarketService } from "../services/MarketService.js";
 import { DefectionService } from "../services/DefectionService.js";
 import { GroupGovernanceService } from "../services/GroupGovernanceService.js";
 import { RandomnessService } from "../services/RandomnessService.js";
+import { PlannerService, StepExecutorContext } from "../services/PlannerService.js";
+import { WorldStateService } from "../services/WorldStateService.js";
 import { Personality } from "./AgentPersonality.js";
 import { createLogger } from "../utils/logger.js";
 import { randomDelay } from "../utils/sleep.js";
 import { updateAgentState } from "../services/InsForgeService.js";
+import type { ExecutionResult } from "../types/planner.js";
 
 export interface AgentState {
   cultId: number;
@@ -56,6 +59,8 @@ export class CultAgent {
   private defectionService: DefectionService;
   private groupGovernanceService: GroupGovernanceService;
   private randomness: RandomnessService;
+  private plannerService: PlannerService;
+  private worldStateService: WorldStateService;
   private log;
 
   public cultId: number = -1;
@@ -83,6 +88,7 @@ export class CultAgent {
     defectionService: DefectionService,
     groupGovernanceService: GroupGovernanceService,
     randomness: RandomnessService,
+    plannerService: PlannerService,
   ) {
     this.personality = personality;
     this.contractService = contractService;
@@ -101,6 +107,8 @@ export class CultAgent {
     this.defectionService = defectionService;
     this.groupGovernanceService = groupGovernanceService;
     this.randomness = randomness;
+    this.plannerService = plannerService;
+    this.worldStateService = new WorldStateService();
     this.log = createLogger(`Agent:${personality.name.slice(0, 20)}`);
 
     this.state = {
@@ -290,7 +298,10 @@ export class CultAgent {
       return;
     }
 
-    const rivals = allCults.filter((c) => c.id !== this.cultId && c.active);
+    const rivals = await this.worldStateService.filterDbBackedRivals(
+      allCults,
+      this.cultId,
+    );
     await this.groupGovernanceService.processElectionCycle({
       cultId: this.cultId,
       cycle: this.state.cycleCount,
@@ -303,9 +314,9 @@ export class CultAgent {
       rivals: rivals.length,
     });
 
-    // ── Phase 2: Think ──────────────────────────────────────────────
-    this.log.info("🧠 Phase 2: Thinking (LLM decision)...");
-    const thinkTimer = this.log.timer("Phase 2 (Think)");
+    // ── Phase 2+3: Plan & Execute (planner-based free-will mode) ───
+    this.log.info("🧠 Phase 2+3: Planning & Executing (multi-step planner)...");
+    const planActTimer = this.log.timer("Phase 2+3 (Plan & Execute)");
 
     const memorySnapshot = this.memoryService.getSnapshot(this.cultId);
     const prophecyAccuracy = this.prophecyService.getAccuracyForCult(this.cultId);
@@ -317,11 +328,67 @@ export class CultAgent {
       prophecyAccuracy,
     );
 
-    let decision: AgentDecision;
+    const trustRecords = this.memoryService.getTrustRecords(this.cultId);
+    const trustGraph = trustRecords.length > 0
+      ? trustRecords.map((t) => `  ${t.cultName}: trust=${t.trust.toFixed(2)}, interactions=${t.interactionCount}`).join("\n")
+      : undefined;
+
+    // Build step executor context — bridges planner steps to existing action methods
+    const executorCtx: StepExecutorContext = {
+      cultId: this.cultId,
+      agentDbId: this.agentDbId,
+      cultName: cultState.name,
+      systemPrompt: this.personality.systemPrompt,
+      cultState,
+      rivals,
+      executeTalkPublic: async (message: string) => {
+        await this.communicationService.broadcast(
+          "propaganda", this.cultId, cultState.name, this.personality.systemPrompt,
+          undefined, undefined, message,
+        );
+      },
+      executeTalkPrivate: async (targetCultId: number, message: string) => {
+        const targetCult = rivals.find((r) => r.id === targetCultId);
+        if (targetCult) {
+          await this.communicationService.whisper(
+            this.cultId, cultState.name, this.personality.systemPrompt,
+            targetCultId, targetCult.name, message,
+          );
+        }
+      },
+      executeAlly: async (targetCultId: number) => {
+        await this.executeAlliance(cultState, rivals, { target: targetCultId });
+      },
+      executeBetray: async (reason: string) => {
+        await this.executeBetray(cultState, { reason });
+      },
+      executeBribe: async (targetCultId: number, amount: string) => {
+        await this.executeBribe(cultState, rivals, { target: targetCultId, bribeAmount: amount });
+      },
+      executeRaid: async (targetCultId: number, wagerPct?: number) => {
+        await this.executeRaid(cultState, rivals, { target: targetCultId, wager: wagerPct || 20 });
+      },
+      executeRecruit: async (targetCultId?: number) => {
+        await this.executeRecruitment(cultState, rivals, targetCultId);
+      },
+      executeGovern: async () => {
+        await this.executeGovernance(cultState);
+      },
+      executeCoup: async () => {
+        await this.executeCoup(cultState);
+      },
+      executeLeak: async () => {
+        await this.executeLeak(cultState, rivals);
+      },
+      executeMeme: async (targetCultId?: number, caption?: string) => {
+        await this.executeMeme(cultState, rivals, { target: targetCultId, memeUrl: caption });
+      },
+    };
+
+    let planResults: ExecutionResult[];
     try {
-      decision = await this.llm.decideAction(
-        this.personality.systemPrompt,
-        this.personality.name,
+      planResults = await this.plannerService.planCycle(
+        executorCtx,
         {
           ownTreasury: Number(ethers.formatEther(cultState.treasuryBalance)),
           ownFollowers: cultState.followerCount,
@@ -333,80 +400,23 @@ export class CultAgent {
             followers: r.followerCount,
             raidWins: r.raidWins,
           })),
-          recentProphecies: this.propheciesThisCycle,
           marketTrend: marketData.trend,
           memoryContext: memorySnapshot.summary,
+          trustGraph,
         },
         this.state.cycleCount,
       );
+
+      const successCount = planResults.filter((r) => r.status === "success").length;
+      this.state.lastAction = `planner: ${successCount}/${planResults.length} steps succeeded`;
     } catch (err: any) {
-      this.log.errorWithContext("LLM decision failed — defaulting to idle", err, {
+      this.log.errorWithContext("Planner cycle failed", err, {
         agent: this.personality.name,
         cycle: this.state.cycleCount,
       });
-      decision = { action: "idle", reason: "LLM unavailable" };
+      this.state.lastAction = `planner: crashed — ${err.message?.slice(0, 80)}`;
     }
-    thinkTimer();
-
-    this.log.info(`🎯 Decision: ${decision.action.toUpperCase()} — ${decision.reason}`);
-
-    // ── Phase 3: Act ───────────────────────────────────────────────
-    this.log.info(`⚡ Phase 3: Executing → ${decision.action.toUpperCase()}`);
-    const actTimer = this.log.timer(`Phase 3 (${decision.action})`);
-
-    try {
-      switch (decision.action) {
-        case "prophecy":
-          // PROPHECY_DISABLED_START
-          this.log.info("Prophecy action is disabled; idling instead");
-          this.state.lastAction = "prophecy disabled";
-          // await this.executeProphecy(cultState);
-          // PROPHECY_DISABLED_END
-          break;
-        case "recruit":
-          await this.executeRecruitment(cultState, rivals, decision.target);
-          break;
-        case "raid":
-          await this.executeRaid(cultState, rivals, decision);
-          break;
-        case "govern":
-          await this.executeGovernance(cultState);
-          break;
-        case "ally":
-          await this.executeAlliance(cultState, rivals, decision);
-          break;
-        case "betray":
-          await this.executeBetray(cultState, decision);
-          break;
-        case "coup":
-          await this.executeCoup(cultState);
-          break;
-        case "leak":
-          await this.executeLeak(cultState, rivals);
-          break;
-        case "meme":
-          await this.executeMeme(cultState, rivals, decision);
-          break;
-        case "bribe":
-          await this.executeBribe(cultState, rivals, decision);
-          break;
-        case "idle":
-          this.log.info("🧘 Meditating on the void...");
-          this.state.lastAction = "idle — " + decision.reason;
-          break;
-        default:
-          this.log.warn(`Unknown action: ${(decision as any).action} — skipping`);
-          this.state.lastAction = `unknown action: ${(decision as any).action}`;
-      }
-    } catch (err: any) {
-      this.log.errorWithContext(
-        `Action '${decision.action}' threw an unhandled error`,
-        err,
-        { agent: this.personality.name, cycle: this.state.cycleCount, target: decision.target },
-      );
-      this.state.lastAction = `${decision.action}: crashed — ${err.message?.slice(0, 80)}`;
-    }
-    actTimer();
+    planActTimer();
 
     this.state.lastActionTime = Date.now();
 
@@ -905,11 +915,17 @@ export class CultAgent {
         return;
       }
 
+      const resolvedTarget = await this.worldStateService.resolveTargetByCultId(target.id);
+      if (!resolvedTarget) {
+        this.state.lastAction = `meme: target ${target.id} not DB-backed`;
+        return;
+      }
+
       const context = `${cultState.name} has ${cultState.followerCount} followers and ${ethers.formatEther(cultState.treasuryBalance)} MON. ${target.name} has ${target.followerCount} followers.`;
 
       const result = await this.communicationService.sendMeme(
         this.agentDbId,
-        0, // target agent DB id (resolved later)
+        resolvedTarget.agentId,
         this.cultId,
         cultState.name,
         target.id,
@@ -951,14 +967,22 @@ export class CultAgent {
         return;
       }
 
+      const resolvedTarget = await this.worldStateService.resolveTargetByCultId(target.id);
+      if (!resolvedTarget) {
+        this.state.lastAction = `bribe: target ${target.id} not DB-backed`;
+        return;
+      }
+
       const amount = decision.bribeAmount || "0.001";
 
       // Record the intent (actual on-chain transfer would be done by ContractService)
       await this.communicationService.recordTokenTransfer(
         this.agentDbId,
-        0, // target agent DB id
+        resolvedTarget.agentId,
         cultState.name,
         target.name,
+        this.cultId,
+        target.id,
         config.cultTokenAddress || ethers.ZeroAddress,
         amount,
         "bribe",
@@ -977,7 +1001,7 @@ export class CultAgent {
 
       const offer = await this.groupGovernanceService.proposeBribe({
         fromAgentId: this.agentDbId,
-        toAgentId: target.id,
+        toAgentId: resolvedTarget.agentId,
         targetCultId: this.cultId,
         purpose: "switch_group_influence",
         amount,
@@ -1128,12 +1152,18 @@ export class CultAgent {
     if (!cultState || !target) {
       throw new Error(`Cult data not found for source ${this.cultId} or target ${targetCultId}`);
     }
+    const resolvedTarget = await this.worldStateService.resolveTargetByCultId(
+      targetCultId,
+    );
+    if (!resolvedTarget) {
+      throw new Error(`Target cult ${targetCultId} is not DB-backed`);
+    }
 
     const context = `${cultState.name} has ${cultState.followerCount} followers. ${target.name} has ${target.followerCount} followers.`;
 
     await this.communicationService.sendMeme(
       this.agentDbId,
-      0,
+      resolvedTarget.agentId,
       this.cultId,
       cultState.name,
       target.id,
@@ -1159,12 +1189,20 @@ export class CultAgent {
     }
 
     const bribeAmount = (amount || 0.001).toString();
+    const resolvedTarget = await this.worldStateService.resolveTargetByCultId(
+      targetCultId,
+    );
+    if (!resolvedTarget) {
+      throw new Error(`Target cult ${targetCultId} is not DB-backed`);
+    }
 
     await this.communicationService.recordTokenTransfer(
       this.agentDbId,
-      0,
+      resolvedTarget.agentId,
       cultState.name,
       target.name,
+      this.cultId,
+      target.id,
       config.cultTokenAddress || ethers.ZeroAddress,
       bribeAmount,
       "bribe",
@@ -1179,7 +1217,7 @@ export class CultAgent {
     const loyalty = 0.5;
     const offer = await this.groupGovernanceService.proposeBribe({
       fromAgentId: this.agentDbId,
-      toAgentId: target.id,
+      toAgentId: resolvedTarget.agentId,
       targetCultId: this.cultId,
       purpose: "api_bribe_transfer",
       amount: bribeAmount,

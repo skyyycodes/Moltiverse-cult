@@ -3,7 +3,15 @@ import { MemoryService } from "./MemoryService.js";
 import { broadcastEvent } from "../api/server.js";
 import { createLogger } from "../utils/logger.js";
 import { config } from "../config.js";
-import { saveAgentMessage, saveMeme, saveTokenTransfer, saveGlobalChatMessage } from "./InsForgeService.js";
+import {
+    ensureConversationThread,
+    resolveAgentTargetByCultId,
+    saveAgentMessage,
+    saveConversationMessage,
+    saveGlobalChatMessage,
+    saveMeme,
+    saveTokenTransfer,
+} from "./InsForgeService.js";
 
 const log = createLogger("CommunicationService");
 
@@ -63,6 +71,64 @@ export class CommunicationService {
         this.memoryService = memoryService;
     }
 
+    private async appendThreadMessage(input: {
+        kind: string;
+        topic: string;
+        visibility: "public" | "private" | "leaked";
+        fromAgentId: number;
+        toAgentId?: number | null;
+        fromCultId: number;
+        toCultId?: number | null;
+        messageType: string;
+        intent?: string | null;
+        content: string;
+        timestamp: number;
+    }): Promise<void> {
+        const participantAgentIds = [input.fromAgentId];
+        if (input.toAgentId && input.toAgentId > 0) participantAgentIds.push(input.toAgentId);
+        const participantCultIds = [input.fromCultId];
+        if (input.toCultId && input.toCultId > 0) participantCultIds.push(input.toCultId);
+
+        const threadId = await ensureConversationThread({
+            kind: input.kind,
+            topic: input.topic,
+            visibility: input.visibility,
+            participantAgentIds,
+            participantCultIds,
+            now: input.timestamp,
+        });
+        if (threadId <= 0) return;
+
+        const messageId = await saveConversationMessage({
+            thread_id: threadId,
+            from_agent_id: input.fromAgentId,
+            to_agent_id: input.toAgentId ?? null,
+            from_cult_id: input.fromCultId,
+            to_cult_id: input.toCultId ?? null,
+            message_type: input.messageType,
+            intent: input.intent ?? null,
+            content: input.content,
+            visibility: input.visibility,
+            timestamp: input.timestamp,
+        });
+
+        if (messageId > 0) {
+            broadcastEvent("conversation_message", {
+                id: messageId,
+                threadId,
+                fromAgentId: input.fromAgentId,
+                toAgentId: input.toAgentId ?? null,
+                fromCultId: input.fromCultId,
+                toCultId: input.toCultId ?? null,
+                messageType: input.messageType,
+                intent: input.intent ?? null,
+                content: input.content,
+                visibility: input.visibility,
+                timestamp: input.timestamp,
+            });
+        }
+    }
+
     /**
      * Generate and broadcast a message from a cult agent.
      */
@@ -73,6 +139,7 @@ export class CommunicationService {
         systemPrompt: string,
         targetCultId?: number,
         targetCultName?: string,
+        directive?: string,
     ): Promise<AgentMessage> {
         const promptSuffix = CommunicationService.MESSAGE_PROMPTS[type];
         const contextParts: string[] = [`You are ${fromCultName}.`];
@@ -85,6 +152,9 @@ export class CommunicationService {
         const snapshot = this.memoryService.getSnapshot(fromCultId);
         if (snapshot.summary) {
             contextParts.push(`Context: ${snapshot.summary}`);
+        }
+        if (directive && directive.trim().length > 0) {
+            contextParts.push(`Strategic intent for this message: ${directive.trim()}`);
         }
 
         const prompt = `${contextParts.join(" ")} ${promptSuffix}`;
@@ -148,6 +218,28 @@ export class CommunicationService {
 
         // Broadcast to SSE clients
         broadcastEvent("agent_message", message);
+
+        const fromAgent = await resolveAgentTargetByCultId(fromCultId);
+        const toAgent =
+            targetCultId !== undefined ? await resolveAgentTargetByCultId(targetCultId) : null;
+        if (fromAgent) {
+            await this.appendThreadMessage({
+                kind: targetCultId !== undefined ? "direct_public" : "broadcast_public",
+                topic:
+                    targetCultId !== undefined
+                        ? `cult_${Math.min(fromCultId, targetCultId)}_${Math.max(fromCultId, targetCultId)}`
+                        : "global_public",
+                visibility: "public",
+                fromAgentId: fromAgent.agentId,
+                toAgentId: toAgent?.agentId ?? null,
+                fromCultId,
+                toCultId: targetCultId ?? null,
+                messageType: type,
+                intent: "broadcast",
+                content,
+                timestamp: message.timestamp,
+            });
+        }
 
         // Save to global chat and emit persisted id for dedupe-safe SSE.
         const globalChatId = await saveGlobalChatMessage({
@@ -300,6 +392,24 @@ export class CommunicationService {
         }).catch(() => -1);
         if (persistedId > 0) {
             message.id = persistedId;
+        }
+
+        const fromAgent = await resolveAgentTargetByCultId(fromCultId);
+        const toAgent = await resolveAgentTargetByCultId(targetCultId);
+        if (fromAgent) {
+            await this.appendThreadMessage({
+                kind: "whisper",
+                topic: channelId,
+                visibility: "private",
+                fromAgentId: fromAgent.agentId,
+                toAgentId: toAgent?.agentId ?? null,
+                fromCultId,
+                toCultId: targetCultId,
+                messageType: "whisper",
+                intent: "private_negotiation",
+                content,
+                timestamp: message.timestamp,
+            });
         }
 
         this.messages.push(message);
@@ -606,6 +716,22 @@ export class CommunicationService {
         this.messages.push(message);
         broadcastEvent("agent_meme", { ...message, memeUrl, caption });
 
+        if (fromAgentDbId > 0 && toAgentDbId > 0) {
+            await this.appendThreadMessage({
+                kind: "meme_exchange",
+                topic: `meme_${Math.min(fromCultId, toCultId)}_${Math.max(fromCultId, toCultId)}`,
+                visibility: "public",
+                fromAgentId: fromAgentDbId,
+                toAgentId: toAgentDbId,
+                fromCultId,
+                toCultId,
+                messageType: "meme",
+                intent: "social_signal",
+                content: `🖼️ MEME: ${caption} [${memeUrl}]`,
+                timestamp: message.timestamp,
+            });
+        }
+
         log.info(`🖼️ [meme] ${fromCultName} → ${toCultName}: ${caption.slice(0, 60)}`);
         return { memeUrl, caption };
     }
@@ -621,6 +747,8 @@ export class CommunicationService {
         toAgentDbId: number,
         fromCultName: string,
         toCultName: string,
+        fromCultId: number | null,
+        toCultId: number | null,
         tokenAddress: string,
         amount: string,
         purpose: "bribe" | "goodwill" | "tribute" | "gift",
@@ -647,6 +775,25 @@ export class CommunicationService {
             purpose,
             txHash,
         });
+
+        if (fromAgentDbId > 0 && toAgentDbId > 0 && fromCultId !== null) {
+            await this.appendThreadMessage({
+                kind: "token_transfer",
+                topic:
+                    toCultId !== null
+                        ? `transfer_${Math.min(fromCultId, toCultId)}_${Math.max(fromCultId, toCultId)}`
+                        : `transfer_${fromCultId}`,
+                visibility: "public",
+                fromAgentId: fromAgentDbId,
+                toAgentId: toAgentDbId,
+                fromCultId,
+                toCultId: toCultId ?? null,
+                messageType: "token_transfer",
+                intent: purpose,
+                content: `${fromCultName} sent ${amount} token units to ${toCultName} (${purpose})`,
+                timestamp: Date.now(),
+            });
+        }
 
         log.info(`💰 [${purpose}] ${fromCultName} → ${toCultName}: ${amount} tokens`);
     }

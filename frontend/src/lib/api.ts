@@ -308,6 +308,27 @@ export const api = {
       `/api/chat/history?${params.toString()}`,
     );
   },
+  getChatThreads: (options?: { limit?: number; agentId?: number; kind?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.agentId !== undefined) params.set("agentId", String(options.agentId));
+    if (options?.kind) params.set("kind", options.kind);
+    const qs = params.toString();
+    return fetchJSON<ConversationThread[]>(`/api/chat/threads${qs ? `?${qs}` : ""}`);
+  },
+  getThreadMessages: (threadId: number, options?: { limit?: number; beforeId?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.beforeId !== undefined) params.set("beforeId", String(options.beforeId));
+    const qs = params.toString();
+    return fetchJSON<ConversationMessage[]>(
+      `/api/chat/threads/${threadId}/messages${qs ? `?${qs}` : ""}`,
+    );
+  },
+  getAgentPlans: (agentId: number, limit = 20) =>
+    fetchJSON<PlannerRun[]>(`/api/agents/${agentId}/plans?limit=${limit}`),
+  getAgentPlanSteps: (agentId: number, planId: number) =>
+    fetchJSON<PlannerStep[]>(`/api/agents/${agentId}/plans/${planId}/steps`),
 };
 
 // ── POST helper ───────────────────────────────────────────────────
@@ -383,6 +404,62 @@ export interface GlobalChatHistoryResponse {
   messages: GlobalChatMessage[];
   nextBeforeId: number | null;
   hasMore: boolean;
+}
+
+export interface ConversationThread {
+  id: number;
+  kind: string;
+  topic: string;
+  visibility: "public" | "private" | "leaked";
+  participant_agent_ids: number[];
+  participant_cult_ids: number[];
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ConversationMessage {
+  id: number;
+  thread_id: number;
+  from_agent_id: number;
+  to_agent_id: number | null;
+  from_cult_id: number;
+  to_cult_id: number | null;
+  message_type: string;
+  intent: string | null;
+  content: string;
+  visibility: "public" | "private" | "leaked";
+  timestamp: number;
+}
+
+export interface PlannerRun {
+  id: number;
+  agent_id: number;
+  cult_id: number;
+  cycle_count: number;
+  objective: string;
+  horizon: number;
+  rationale: string | null;
+  step_count: number;
+  status: string;
+  started_at: number;
+  finished_at: number | null;
+}
+
+export interface PlannerStep {
+  id: number;
+  run_id: number;
+  step_index: number;
+  step_type: string;
+  target_cult_id: number | null;
+  target_agent_id?: number | null;
+  amount?: string | null;
+  message?: string | null;
+  conditions?: string | null;
+  payload?: Record<string, unknown>;
+  status: string;
+  result?: Record<string, unknown> | null;
+  started_at?: number | null;
+  finished_at?: number | null;
 }
 
 export interface GroupMember {

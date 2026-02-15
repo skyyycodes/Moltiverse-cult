@@ -12,6 +12,7 @@ import { sseRoutes } from "./routes/sse.js";
 import { agentCreationRoutes } from "./routes/agentCreation.js";
 import { memeTransferRoutes } from "./routes/memeTransfers.js";
 import { chatRoutes } from "./routes/chat.js";
+import { plannerRoutes } from "./routes/plans.js";
 import type { AgentOrchestrator } from "../core/AgentOrchestrator.js";
 
 const log = createLogger("API");
@@ -155,6 +156,7 @@ export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
     app.use("/api/agents/management", agentCreationRoutes(orchestrator));
     app.use("/api/social", memeTransferRoutes(orchestrator));
     app.use("/api/chat", chatRoutes(orchestrator));
+    app.use("/api/plans", plannerRoutes());
   }
 
   // Mount static agent routes last (after specific paths)
