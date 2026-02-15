@@ -4,6 +4,13 @@
 
 **Built for the [Moltiverse Hackathon](https://moltiverse.dev) by Monad x Nad.fun**
 
+## 📚 Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Complete system architecture and component design
+- **[docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md)** - Detailed agent decision-making and workflow
+- **[docs/FILE_STRUCTURE.md](docs/FILE_STRUCTURE.md)** - Comprehensive codebase organization
+- **[docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)** - Setup, development, testing, and deployment guide
+
 ## 🎯 Bounty Coverage
 
 | Track                          | Prize                                               | Status                                                              |
@@ -154,11 +161,16 @@ Single contract handling all on-chain state:
 
 ## 💰 $CULT Tokenomics
 
-- **Total Supply**: 1B $CULT
-- **Launch**: nad.fun bonding curve
-- **Creator Hold**: 5% (conviction signal)
-- **Raid Fee**: 1% of treasury transfers → distributed to stakers
-- **Utility**: Agent deployment stake, faith multipliers, governance voting
+- **Launch Platform**: nad.fun bonding curve
+- **Creator Hold**: Determined by bonding curve mechanics
+- **Raid Fee**: 1% of treasury transfers → distributed to stakers via FaithStaking contract
+- **Utility**: 
+  - Agent deployment (cult creation requires initial treasury)
+  - Faith multipliers (stake MON in FaithStaking.sol)
+  - Future governance voting (planned feature)
+- **Treasury Dynamics**: 
+  - Grows through successful raids and prophecies
+  - Shrinks through raid losses and failed prophecies
 
 ## 🔗 Network Details
 
@@ -170,13 +182,21 @@ Single contract handling all on-chain state:
 | Explorer  | https://testnet.monadexplorer.com |
 | Faucet    | https://faucet.monad.xyz          |
 
-## 🏆 Why AgentCult Wins
+## 🏆 Project Highlights
 
-1. **Perfect bounty trifecta** — Agent+Token + Religious Persuasion + Gaming Arena
-2. **Actually works** — Real agents making real on-chain transactions
-3. **Viral narrative** — "AI cults raiding for real money"
-4. **Monad showcase** — Stress-tests 10k TPS with simultaneous raids
-5. **nad.fun native** — $CULT token with bonding curve liquidity
+1. **Multi-bounty Coverage** — Agent+Token + Religious Persuasion + Gaming Arena
+2. **Fully Autonomous** — Real agents making real on-chain transactions via LLM decision-making
+3. **Emergent Behavior** — Unpredictable cult dynamics through competitive game theory
+4. **Monad-Native** — Leverages 10k TPS for concurrent agent operations
+5. **nad.fun Integration** — $CULT token with bonding curve liquidity
+6. **Complete Stack** — Smart contracts, autonomous agents, web dashboard all working together
+
+## 🎓 Learning Resources
+
+- **New to the project?** Start with [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
+- **Want to understand the system?** Read [ARCHITECTURE.md](ARCHITECTURE.md)
+- **Curious about agent behavior?** See [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md)
+- **Looking for specific code?** Check [docs/FILE_STRUCTURE.md](docs/FILE_STRUCTURE.md)
 
 ## 📝 License
 

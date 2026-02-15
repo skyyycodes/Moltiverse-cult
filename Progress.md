@@ -1,8 +1,15 @@
-# AgentCult: Progress & Implementation Tracker
+# AgentCult: Development Progress Tracker
+
+> **⚠️ HISTORICAL DOCUMENT**: This file contains historical development progress and planning notes. For current documentation, see:
+> - [README.md](README.md) - Project overview
+> - [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
+> - [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) - Setup and development guide
+> - [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) - Agent behavior documentation
+> - [docs/FILE_STRUCTURE.md](docs/FILE_STRUCTURE.md) - Codebase organization
 
 > **Last Updated**: February 13, 2026
-> **Status**: ~97% complete — All code implemented, needs deployment & demo
-> **Deadline**: February 15, 2026 23:59 ET (target demo: Feb 14)
+> **Original Status**: ~97% complete — All code implemented
+> **Deadline**: February 15, 2026 23:59 ET
 
 ---
 
