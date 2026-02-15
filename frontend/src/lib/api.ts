@@ -747,6 +747,13 @@ export const adminApi = {
       toCultId,
       amount,
     }),
+  getBribeOffers: () =>
+    fetchJSON<Array<BribeOffer & { from_cult_name: string; to_cult_name: string; target_cult_name: string }>>("/api/admin/bribes/offers"),
+  acceptBribe: (offerId: number, forceSwitch?: boolean) =>
+    postJSON<{ success: boolean; accepted: boolean; switched: boolean }>("/api/admin/bribes/accept", {
+      offerId,
+      forceSwitch,
+    }),
 
   // Prophecies
   createProphecy: (cultId: number) =>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { adminApi, type AgentMessage, type AdminOverview, type AdminOverviewAgent, type Cult } from "@/lib/api";
+import { adminApi, type AgentMessage, type AdminOverview, type AdminOverviewAgent, type BribeOffer, type Cult } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { CULT_COLORS } from "@/lib/constants";
 
@@ -733,6 +733,143 @@ function GovernancePanel({
   );
 }
 
+type EnrichedBribeOffer = BribeOffer & {
+  from_cult_name: string;
+  to_cult_name: string;
+  target_cult_name: string;
+};
+
+function BribeOffersPanel({
+  onAction,
+}: {
+  onAction: (action: string, result: string) => void;
+}) {
+  const [offers, setOffers] = useState<EnrichedBribeOffer[]>([]);
+  const [loadingOffers, setLoadingOffers] = useState(false);
+  const [accepting, setAccepting] = useState<Record<number, boolean>>({});
+
+  const loadOffers = async () => {
+    setLoadingOffers(true);
+    try {
+      const data = await adminApi.getBribeOffers();
+      setOffers(data);
+    } catch {
+      onAction("loadBribes", "error: failed to load");
+    } finally {
+      setLoadingOffers(false);
+    }
+  };
+
+  const acceptOffer = async (offerId: number, forceSwitch: boolean) => {
+    setAccepting((m) => ({ ...m, [offerId]: true }));
+    try {
+      const result = await adminApi.acceptBribe(offerId, forceSwitch);
+      onAction(
+        "acceptBribe",
+        result.switched ? "accepted + switched" : "accepted",
+      );
+      await loadOffers();
+    } catch (err: unknown) {
+      onAction(
+        "acceptBribe",
+        `error: ${err instanceof Error ? err.message : "unknown"}`,
+      );
+    } finally {
+      setAccepting((m) => ({ ...m, [offerId]: false }));
+    }
+  };
+
+  const statusColor = (s: string) => {
+    switch (s) {
+      case "pending":
+        return "text-yellow-400";
+      case "accepted":
+        return "text-green-400";
+      case "rejected":
+        return "text-red-400";
+      case "executed":
+        return "text-purple-400";
+      case "expired":
+        return "text-white/30";
+      default:
+        return "text-white/50";
+    }
+  };
+
+  return (
+    <Card title="Bribe Offers">
+      <div className="space-y-3">
+        <ActionButton
+          variant="default"
+          loading={loadingOffers}
+          onClick={loadOffers}
+        >
+          Load Bribe Offers
+        </ActionButton>
+
+        {offers.length === 0 && !loadingOffers && (
+          <p className="text-xs text-white/30 italic">No bribe offers loaded</p>
+        )}
+
+        <div className="max-h-64 overflow-y-auto space-y-2">
+          {offers.map((offer) => (
+            <div
+              key={offer.id}
+              className="bg-white/[0.03] border border-white/[0.06] rounded-lg p-3 space-y-1.5"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-white/70">
+                  #{offer.id}
+                </span>
+                <span
+                  className={`text-[10px] uppercase font-bold ${statusColor(offer.status)}`}
+                >
+                  {offer.status}
+                </span>
+              </div>
+              <div className="text-xs text-white/60">
+                <span className="text-amber-400">{offer.from_cult_name}</span>
+                <span className="text-white/30"> → </span>
+                <span className="text-cyan-400">{offer.to_cult_name}</span>
+              </div>
+              <div className="text-xs text-white/40">
+                Amount: <span className="text-amber-300">{offer.amount} $CULT</span>
+                {" · "}
+                Target: <span className="text-purple-400">{offer.target_cult_name}</span>
+              </div>
+              <div className="text-[10px] text-white/25">
+                P(accept): {(offer.acceptance_probability * 100).toFixed(1)}%
+                {offer.accepted_at && (
+                  <> · Accepted {new Date(offer.accepted_at).toLocaleTimeString()}</>
+                )}
+              </div>
+
+              {offer.status === "pending" && (
+                <div className="flex gap-2 pt-1">
+                  <ActionButton
+                    variant="success"
+                    loading={!!accepting[offer.id]}
+                    onClick={() => acceptOffer(offer.id, false)}
+                  >
+                    Accept
+                  </ActionButton>
+                  <ActionButton
+                    variant="warning"
+                    loading={!!accepting[offer.id]}
+                    onClick={() => acceptOffer(offer.id, true)}
+                  >
+                    Accept + Switch Cult
+                  </ActionButton>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function MemeAndBribePanel({
   cults,
   onAction,
@@ -1420,6 +1557,10 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <MemeAndBribePanel cults={data.cults} onAction={handleAction} />
+            <BribeOffersPanel onAction={handleAction} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <LeakPanel cults={data.cults} onAction={handleAction} />
           </div>
         </div>

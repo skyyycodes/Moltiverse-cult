@@ -514,6 +514,151 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
     }
   });
 
+  // ─── Bribe Offers (list + accept) ──────────────────────────────
+
+  router.get("/bribes/offers", async (_req: Request, res: Response) => {
+    try {
+      const offers = orchestrator.groupGovernanceService.getBribeOffers({ limit: 100 });
+      // Enrich with cult names
+      const enriched = offers.map((offer: any) => {
+        const fromCult = stateStore.cults.find((c) => c.id === offer.from_agent_id);
+        const toCult = stateStore.cults.find((c) => c.id === offer.to_agent_id);
+        const targetCult = stateStore.cults.find((c) => c.id === offer.target_cult_id);
+        return {
+          ...offer,
+          from_cult_name: fromCult?.name || `Cult ${offer.from_agent_id}`,
+          to_cult_name: toCult?.name || `Cult ${offer.to_agent_id}`,
+          target_cult_name: targetCult?.name || `Cult ${offer.target_cult_id}`,
+        };
+      });
+      res.json(enriched);
+    } catch (error: any) {
+      log.error(`List bribe offers failed: ${error.message}`);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.post("/bribes/accept", async (req: Request, res: Response) => {
+    try {
+      const { offerId, forceSwitch } = req.body;
+      if (offerId === undefined) {
+        res.status(400).json({ error: "offerId required" });
+        return;
+      }
+
+      // Find the offer in GroupGovernanceService
+      const allOffers = orchestrator.groupGovernanceService.getBribeOffers({ limit: 500 });
+      const offer = allOffers.find((o: any) => o.id === offerId);
+      if (!offer) {
+        res.status(404).json({ error: `Bribe offer ${offerId} not found` });
+        return;
+      }
+
+      // Import updateBribeOffer from InsForge
+      const { updateBribeOffer } = await import("../../services/InsForgeService.js");
+
+      // Update status to accepted
+      const acceptedAt = Date.now();
+      await updateBribeOffer(offerId, { status: "accepted", accepted_at: acceptedAt });
+
+      // Update local cache
+      (orchestrator.groupGovernanceService as any).updateBribeStatusLocal?.(offerId, "accepted");
+
+      const fromCult = stateStore.cults.find((c) => c.id === offer.from_agent_id);
+      const toCult = stateStore.cults.find((c) => c.id === offer.to_agent_id);
+      const targetCult = stateStore.cults.find((c) => c.id === offer.target_cult_id);
+      const fromName = fromCult?.name || `Cult ${offer.from_agent_id}`;
+      const toName = toCult?.name || `Cult ${offer.to_agent_id}`;
+      const targetName = targetCult?.name || `Cult ${offer.target_cult_id}`;
+
+      // Announce acceptance in global chat
+      const now = Date.now();
+      const content = `${toName} has accepted the bribe of ${offer.amount} $CULT from ${fromName}. The dark pact is consummated.`;
+      await saveGlobalChatMessage({
+        agent_id: offer.to_agent_id,
+        cult_id: offer.target_cult_id,
+        agent_name: toName,
+        cult_name: targetName,
+        message_type: "bribe",
+        content,
+        timestamp: now,
+      }).catch(() => {});
+
+      broadcastEvent("global_chat", {
+        id: now,
+        agent_id: offer.to_agent_id,
+        cult_id: offer.target_cult_id,
+        agent_name: toName,
+        cult_name: targetName,
+        message_type: "bribe",
+        content,
+        timestamp: now,
+      });
+
+      // If forceSwitch, also execute the cult switch
+      let switched = false;
+      if (forceSwitch) {
+        try {
+          // Remove from current cult and add to target cult
+          const currentMembership = (orchestrator.groupGovernanceService as any)
+            .activeMembershipByAgent?.get(offer.to_agent_id);
+          if (currentMembership) {
+            await orchestrator.groupGovernanceService.removeMembership(
+              offer.to_agent_id,
+              currentMembership.cultId,
+              "admin_bribe_accepted_switch",
+            );
+          }
+          await orchestrator.groupGovernanceService.ensureMembership(
+            offer.to_agent_id,
+            offer.target_cult_id,
+            "member",
+            "admin_bribe_accepted_switch",
+            offerId,
+          );
+          await updateBribeOffer(offerId, { status: "executed" });
+          (orchestrator.groupGovernanceService as any).updateBribeStatusLocal?.(offerId, "executed");
+          switched = true;
+
+          // Announce switch
+          const switchContent = `${toName} has defected to ${targetName} after accepting the bribe. Loyalties shift in the shadows.`;
+          await saveGlobalChatMessage({
+            agent_id: offer.to_agent_id,
+            cult_id: offer.target_cult_id,
+            agent_name: toName,
+            cult_name: targetName,
+            message_type: "leave",
+            content: switchContent,
+            timestamp: now + 1,
+          }).catch(() => {});
+
+          broadcastEvent("global_chat", {
+            id: now + 1,
+            agent_id: offer.to_agent_id,
+            cult_id: offer.target_cult_id,
+            agent_name: toName,
+            cult_name: targetName,
+            message_type: "leave",
+            content: switchContent,
+            timestamp: now + 1,
+          });
+        } catch (switchErr: any) {
+          log.warn(`Bribe switch failed (accepted but not switched): ${switchErr.message}`);
+        }
+      }
+
+      res.json({
+        success: true,
+        accepted: true,
+        switched,
+        message: `Bribe ${offerId} accepted${switched ? " and cult switch executed" : ""}`,
+      });
+    } catch (error: any) {
+      log.error(`Accept bribe failed: ${error.message}`);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ─── Prophecies ────────────────────────────────────────────────
 
   router.post("/prophecies/create", async (req: Request, res: Response) => {
