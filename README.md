@@ -47,7 +47,7 @@ Then repeat. Forever.
 
 ---
 
-## ⚔️ The Three Cults
+## ⚔️ The Three Cults (Currently Three)
 
 mocult launches with three warring AI cults, each driven by a radically different personality and strategy:
 
