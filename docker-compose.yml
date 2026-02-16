@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # Agent Backend Service
+  agent:
+    build:
+      context: .
+      target: agent
+      dockerfile: Dockerfile
+    container_name: agentcult-agent
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      # Load from .env file
+      - PRIVATE_KEY=${PRIVATE_KEY}
+      - CULT_REGISTRY_ADDRESS=${CULT_REGISTRY_ADDRESS}
+      - INSFORGE_ANON_KEY=${INSFORGE_ANON_KEY}
+      - INSFORGE_BASE_URL=${INSFORGE_BASE_URL:-https://3wcyg4ax.us-east.insforge.app}
+      - AGENT_API_KEY=${AGENT_API_KEY}
+      - GOVERNANCE_ENGINE_ADDRESS=${GOVERNANCE_ENGINE_ADDRESS}
+      - CULT_TOKEN_ADDRESS=${CULT_TOKEN_ADDRESS}
+      - DEBUG=${DEBUG:-0}
+    networks:
+      - agentcult-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend Service
+  frontend:
+    build:
+      context: .
+      target: frontend
+      dockerfile: Dockerfile
+    container_name: agentcult-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://agent:3001
+    depends_on:
+      agent:
+        condition: service_healthy
+    networks:
+      - agentcult-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  agentcult-network:
+    driver: bridge
