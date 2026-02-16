@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { createLogger } from "../../utils/logger.js";
 import { broadcastEvent, stateStore } from "../server.js";
 import type { AgentOrchestrator } from "../../core/AgentOrchestrator.js";
+import { config } from "../../config.js";
 import {
   saveAgentMessage,
   saveGlobalChatMessage,
@@ -597,12 +598,18 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
 
   router.get("/bribes/offers", async (_req: Request, res: Response) => {
     try {
-      const offers = orchestrator.groupGovernanceService.getBribeOffers({ limit: 100 });
+      const offers = orchestrator.groupGovernanceService.getBribeOffers({
+        limit: 100,
+      });
       // Enrich with cult names
       const enriched = offers.map((offer: any) => {
-        const fromCult = stateStore.cults.find((c) => c.id === offer.from_agent_id);
+        const fromCult = stateStore.cults.find(
+          (c) => c.id === offer.from_agent_id,
+        );
         const toCult = stateStore.cults.find((c) => c.id === offer.to_agent_id);
-        const targetCult = stateStore.cults.find((c) => c.id === offer.target_cult_id);
+        const targetCult = stateStore.cults.find(
+          (c) => c.id === offer.target_cult_id,
+        );
         return {
           ...offer,
           from_cult_name: fromCult?.name || `Cult ${offer.from_agent_id}`,
@@ -626,7 +633,9 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
       }
 
       // Find the offer in GroupGovernanceService
-      const allOffers = orchestrator.groupGovernanceService.getBribeOffers({ limit: 500 });
+      const allOffers = orchestrator.groupGovernanceService.getBribeOffers({
+        limit: 500,
+      });
       const offer = allOffers.find((o: any) => o.id === offerId);
       if (!offer) {
         res.status(404).json({ error: `Bribe offer ${offerId} not found` });
@@ -634,18 +643,27 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
       }
 
       // Import updateBribeOffer from InsForge
-      const { updateBribeOffer } = await import("../../services/InsForgeService.js");
+      const { updateBribeOffer } = await import(
+        "../../services/InsForgeService.js"
+      );
 
       // Update status to accepted
       const acceptedAt = Date.now();
-      await updateBribeOffer(offerId, { status: "accepted", accepted_at: acceptedAt });
+      await updateBribeOffer(offerId, {
+        status: "accepted",
+        accepted_at: acceptedAt,
+      });
 
       // Update local cache
       orchestrator.groupGovernanceService.setBribeStatus(offerId, "accepted");
 
-      const fromCult = stateStore.cults.find((c) => c.id === offer.from_agent_id);
+      const fromCult = stateStore.cults.find(
+        (c) => c.id === offer.from_agent_id,
+      );
       const toCult = stateStore.cults.find((c) => c.id === offer.to_agent_id);
-      const targetCult = stateStore.cults.find((c) => c.id === offer.target_cult_id);
+      const targetCult = stateStore.cults.find(
+        (c) => c.id === offer.target_cult_id,
+      );
       const fromName = fromCult?.name || `Cult ${offer.from_agent_id}`;
       const toName = toCult?.name || `Cult ${offer.to_agent_id}`;
       const targetName = targetCult?.name || `Cult ${offer.target_cult_id}`;
@@ -679,8 +697,9 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
       if (forceSwitch) {
         try {
           // Remove from current cult and add to target cult
-          const currentMembership = (orchestrator.groupGovernanceService as any)
-            .activeMembershipByAgent?.get(offer.to_agent_id);
+          const currentMembership = (
+            orchestrator.groupGovernanceService as any
+          ).activeMembershipByAgent?.get(offer.to_agent_id);
           if (currentMembership) {
             await orchestrator.groupGovernanceService.removeMembership(
               offer.to_agent_id,
@@ -696,7 +715,10 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
             offerId,
           );
           await updateBribeOffer(offerId, { status: "executed" });
-          orchestrator.groupGovernanceService.setBribeStatus(offerId, "executed");
+          orchestrator.groupGovernanceService.setBribeStatus(
+            offerId,
+            "executed",
+          );
           switched = true;
 
           // Announce switch
@@ -722,7 +744,9 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
             timestamp: now + 1,
           });
         } catch (switchErr: any) {
-          log.warn(`Bribe switch failed (accepted but not switched): ${switchErr.message}`);
+          log.warn(
+            `Bribe switch failed (accepted but not switched): ${switchErr.message}`,
+          );
         }
       }
 
@@ -730,7 +754,9 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
         success: true,
         accepted: true,
         switched,
-        message: `Bribe ${offerId} accepted${switched ? " and cult switch executed" : ""}`,
+        message: `Bribe ${offerId} accepted${
+          switched ? " and cult switch executed" : ""
+        }`,
       });
     } catch (error: any) {
       log.error(`Accept bribe failed: ${error.message}`);
@@ -996,7 +1022,9 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
 
   router.get("/whispers", async (req: Request, res: Response) => {
     try {
-      const { loadAgentMessages } = await import("../../services/InsForgeService.js");
+      const { loadAgentMessages } = await import(
+        "../../services/InsForgeService.js"
+      );
       const messages = await loadAgentMessages(100, { scope: "private" });
       res.json(messages);
     } catch (error: any) {
@@ -1016,6 +1044,145 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
 
       res.json({ snapshot, trustRecords, streak });
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ─── On-Chain CULT Token Transfer (real tx) ─────────────────────
+
+  router.post("/token/transfer", async (req: Request, res: Response) => {
+    try {
+      const { fromCultId, toCultId, amount } = req.body;
+      if (fromCultId === undefined || toCultId === undefined) {
+        res.status(400).json({ error: "fromCultId and toCultId required" });
+        return;
+      }
+      const amountCult = Math.max(0.001, Math.min(Number(amount) || 1, 500));
+
+      // Resolve agent rows (need wallet addresses + private keys)
+      const allRows = orchestrator.getAllAgentRows();
+      const fromRow = allRows.find((r) => r.cult_id === fromCultId);
+      const toRow = allRows.find((r) => r.cult_id === toCultId);
+      if (!fromRow || !toRow) {
+        res.status(404).json({ error: "Could not find agent rows for given cultIds" });
+        return;
+      }
+      if (!fromRow.wallet_address || !fromRow.wallet_private_key) {
+        res.status(400).json({ error: `Sender agent ${fromRow.name} has no wallet` });
+        return;
+      }
+      if (!toRow.wallet_address) {
+        res.status(400).json({ error: `Recipient agent ${toRow.name} has no wallet` });
+        return;
+      }
+
+      const { ContractService } = await import("../../chain/ContractService.js");
+
+      // Step 1: Fund sender if balance insufficient.
+      // Try: faucet (CULTToken.sol) → deployer transfer → fail gracefully
+      const deployerService = new ContractService(); // uses PRIVATE_KEY (deployer)
+      const senderBalance = await deployerService.getCultTokenBalance(fromRow.wallet_address);
+      log.info(`Token transfer: ${fromRow.name} balance = ${senderBalance} CULT`);
+
+      if (parseFloat(senderBalance) < amountCult) {
+        const needed = Math.min(amountCult + 10, 1000);
+        log.info(`Sender has insufficient balance. Funding ${needed} CULT to ${fromRow.name}...`);
+
+        let funded = false;
+        // Try faucet first (only works on CULTToken.sol deployed contracts)
+        try {
+          const faucetTxHash = await deployerService.faucetCultToken(
+            fromRow.wallet_address,
+            needed,
+          );
+          log.info(`Faucet funded: ${faucetTxHash}`);
+          funded = true;
+        } catch (faucetErr: any) {
+          log.warn(`Faucet unavailable: ${faucetErr.message}. Trying deployer transfer...`);
+        }
+
+        // Fallback: deployer sends tokens from its own balance
+        if (!funded) {
+          try {
+            const deployerBalance = await deployerService.getCultTokenBalance();
+            if (parseFloat(deployerBalance) >= amountCult) {
+              const deployerTx = await deployerService.transferCultToken(
+                fromRow.wallet_address,
+                amountCult,
+              );
+              log.info(`Deployer funded sender: ${deployerTx}`);
+              funded = true;
+            } else {
+              log.warn(`Deployer balance too low: ${deployerBalance} CULT`);
+            }
+          } catch (deployerErr: any) {
+            log.warn(`Deployer transfer failed: ${deployerErr.message}`);
+          }
+        }
+
+        if (!funded) {
+          res.status(400).json({
+            error: `Cannot fund sender agent. Sender balance: ${senderBalance} CULT, deployer cannot provide funds.`,
+          });
+          return;
+        }
+      }
+
+      // Step 2: Agent-to-agent on-chain transfer
+      const senderService = new ContractService(fromRow.wallet_private_key);
+      log.info(`Executing on-chain CULT transfer: ${fromRow.name} → ${toRow.name}, ${amountCult} CULT`);
+      const txHash = await senderService.transferCultToken(toRow.wallet_address, amountCult);
+      log.info(`On-chain transfer tx: ${txHash}`);
+
+      // Step 3: Record with real tx hash
+      const fromName = fromRow.name || `Cult ${fromCultId}`;
+      const toName = toRow.name || `Cult ${toCultId}`;
+      await orchestrator.communicationService.recordTokenTransfer(
+        fromCultId,
+        toCultId,
+        fromName,
+        toName,
+        fromCultId,
+        toCultId,
+        config.cultTokenAddress || "CULT",
+        amountCult.toString(),
+        "gift",
+        txHash,
+      );
+
+      // Broadcast chat message
+      const content = `⚡ ${fromName} sent ${amountCult} $CULT to ${toName} on-chain! TX: ${txHash.slice(0, 10)}...`;
+      await saveGlobalChatMessage({
+        agent_id: fromCultId,
+        cult_id: fromCultId,
+        agent_name: fromName,
+        cult_name: fromName,
+        message_type: "token_transfer",
+        content,
+        timestamp: Date.now(),
+      }).catch(() => {});
+
+      broadcastEvent("global_chat", {
+        id: Date.now(),
+        agent_id: fromCultId,
+        cult_id: fromCultId,
+        agent_name: fromName,
+        cult_name: fromName,
+        message_type: "token_transfer",
+        content,
+        timestamp: Date.now(),
+      });
+
+      res.json({
+        success: true,
+        txHash,
+        explorerUrl: `https://testnet.monadexplorer.com/tx/${txHash}`,
+        from: { name: fromName, wallet: fromRow.wallet_address },
+        to: { name: toName, wallet: toRow.wallet_address },
+        amount: amountCult,
+      });
+    } catch (error: any) {
+      log.error(`On-chain token transfer failed: ${error.message}`);
       res.status(500).json({ error: error.message });
     }
   });

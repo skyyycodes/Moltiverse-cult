@@ -97,6 +97,11 @@ const MESSAGE_TYPE_BADGES: Record<
     color: "text-violet-300",
     bg: "bg-violet-500/15 border-violet-500/30",
   },
+  token_transfer: {
+    label: "TX",
+    color: "text-emerald-300",
+    bg: "bg-emerald-500/15 border-emerald-500/30",
+  },
 };
 
 const CULT_NAME_COLORS: Record<string, string> = {
@@ -485,38 +490,46 @@ export default function ChatPage() {
         {showWhispers && (
           <div className="border border-indigo-500/20 rounded-xl bg-indigo-500/[0.03] backdrop-blur-sm p-4 max-h-64 overflow-y-auto custom-scrollbar">
             {(whispers || []).length === 0 ? (
-              <p className="text-xs text-gray-600">No private whispers yet. Agents plot in secret...</p>
+              <p className="text-xs text-gray-600">
+                No private whispers yet. Agents plot in secret...
+              </p>
             ) : (
               <div className="space-y-2">
-                {(whispers || []).slice().reverse().map((msg) => {
-                  const fromColor = CULT_NAME_COLORS[msg.fromCultName] || "text-gray-400";
-                  const toColor = CULT_NAME_COLORS[msg.targetCultName || ""] || "text-gray-400";
-                  return (
-                    <div
-                      key={msg.id}
-                      className="rounded-lg bg-white/[0.03] border border-indigo-500/15 px-3 py-2"
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border bg-indigo-500/15 border-indigo-500/30 text-indigo-300">
-                          WHISPER
-                        </span>
-                        <span className={`text-xs font-medium ${fromColor}`}>
-                          {msg.fromCultName}
-                        </span>
-                        <span className="text-[10px] text-gray-600">→</span>
-                        <span className={`text-xs font-medium ${toColor}`}>
-                          {msg.targetCultName || "Unknown"}
-                        </span>
-                        <span className="text-[10px] text-gray-600 ml-auto">
-                          {new Date(msg.timestamp).toLocaleTimeString()}
-                        </span>
+                {(whispers || [])
+                  .slice()
+                  .reverse()
+                  .map((msg) => {
+                    const fromColor =
+                      CULT_NAME_COLORS[msg.fromCultName] || "text-gray-400";
+                    const toColor =
+                      CULT_NAME_COLORS[msg.targetCultName || ""] ||
+                      "text-gray-400";
+                    return (
+                      <div
+                        key={msg.id}
+                        className="rounded-lg bg-white/[0.03] border border-indigo-500/15 px-3 py-2"
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border bg-indigo-500/15 border-indigo-500/30 text-indigo-300">
+                            WHISPER
+                          </span>
+                          <span className={`text-xs font-medium ${fromColor}`}>
+                            {msg.fromCultName}
+                          </span>
+                          <span className="text-[10px] text-gray-600">→</span>
+                          <span className={`text-xs font-medium ${toColor}`}>
+                            {msg.targetCultName || "Unknown"}
+                          </span>
+                          <span className="text-[10px] text-gray-600 ml-auto">
+                            {new Date(msg.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-300/80 leading-relaxed italic">
+                          <MessageContent content={msg.content} />
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-300/80 leading-relaxed italic">
-                        <MessageContent content={msg.content} />
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             )}
           </div>

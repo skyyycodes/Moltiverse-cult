@@ -39,6 +39,11 @@ export class ContractService {
   private wallet: ethers.Wallet;
   private registry: ethers.Contract;
 
+  /** Expose the wallet address for balance checks / transfers */
+  get walletAddress(): string {
+    return this.wallet.address;
+  }
+
   constructor(privateKey?: string) {
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
     this.wallet = new ethers.Wallet(
@@ -302,6 +307,41 @@ export class ContractService {
     if (!receipt?.hash) {
       throw new Error("CULT transfer did not return a transaction hash");
     }
+    return receipt.hash;
+  }
+
+  /**
+   * Get CULT token balance for any address (or this wallet if no address given).
+   */
+  async getCultTokenBalance(address?: string): Promise<string> {
+    if (!config.cultTokenAddress) throw new Error("CULT_TOKEN_ADDRESS not configured");
+    const token = new ethers.Contract(config.cultTokenAddress, CULT_TOKEN_ABI, this.provider);
+    const decimals = Number(await token.decimals().catch(() => 18));
+    const balance = await token.balanceOf(address || this.wallet.address);
+    return ethers.formatUnits(balance, decimals);
+  }
+
+  /**
+   * Owner-gated faucet: mint testnet CULT to a target address.
+   * Only works when this.wallet is the token owner (deployer).
+   * Rate-limited: 1000 CULT per address per 24h on-chain.
+   */
+  async faucetCultToken(toAddress: string, amountCult: number): Promise<string> {
+    if (!config.cultTokenAddress) throw new Error("CULT_TOKEN_ADDRESS not configured");
+    if (!ethers.isAddress(toAddress)) throw new Error(`Invalid faucet target: ${toAddress}`);
+    if (!Number.isFinite(amountCult) || amountCult <= 0 || amountCult > 1000) {
+      throw new Error(`Faucet amount must be 0 < x <= 1000, got ${amountCult}`);
+    }
+
+    const token = new ethers.Contract(config.cultTokenAddress, CULT_TOKEN_ABI, this.wallet);
+    const decimals = Number(await token.decimals().catch(() => 18));
+    const amountWei = ethers.parseUnits(amountCult.toString(), decimals);
+
+    log.info(`Faucet: minting ${amountCult} CULT to ${toAddress}`);
+    const tx = await token.faucet(toAddress, amountWei);
+    const receipt = await tx.wait();
+    if (!receipt?.hash) throw new Error("Faucet did not return a tx hash");
+    log.info(`Faucet tx: ${receipt.hash}`);
     return receipt.hash;
   }
 }

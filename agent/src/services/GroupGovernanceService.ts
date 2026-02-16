@@ -89,7 +89,10 @@ export class GroupGovernanceService {
   private readonly lastProcessedCycleByCult = new Map<number, number>();
 
   private readonly bribeOffers: BribeOffer[] = [];
-  private readonly pendingSwitchByAgent = new Map<number, PendingSwitchInfluence>();
+  private readonly pendingSwitchByAgent = new Map<
+    number,
+    PendingSwitchInfluence
+  >();
 
   private localElectionId = 1_000_000;
   private localMembershipId = 1_000_000;
@@ -179,7 +182,10 @@ export class GroupGovernanceService {
     limit?: number;
   }): BribeOffer[] {
     const filtered = this.bribeOffers.filter((offer) => {
-      if (options?.cultId !== undefined && offer.target_cult_id !== options.cultId) {
+      if (
+        options?.cultId !== undefined &&
+        offer.target_cult_id !== options.cultId
+      ) {
         return false;
       }
       if (options?.status && offer.status !== options.status) return false;
@@ -210,7 +216,12 @@ export class GroupGovernanceService {
     if (existing && existing.cultId === cultId) return existing;
 
     if (existing) {
-      await deactivateGroupMembership(existing.agentId, existing.cultId, Date.now(), joinReason);
+      await deactivateGroupMembership(
+        existing.agentId,
+        existing.cultId,
+        Date.now(),
+        joinReason,
+      );
       existing.active = false;
       existing.leftAt = Date.now();
       this.activeMembershipByAgent.delete(agentId);
@@ -538,19 +549,18 @@ export class GroupGovernanceService {
 
       candidateScores.sort((a, b) => b.score - a.score);
       const topScore = candidateScores[0]?.score ?? 0;
-      const tied = candidateScores.filter((c) => Math.abs(c.score - topScore) < 1e-9);
+      const tied = candidateScores.filter(
+        (c) => Math.abs(c.score - topScore) < 1e-9,
+      );
       const winner =
         tied.length > 1
-          ? this.randomness.choose(
-              tied,
-              {
-                domain: "election_vote_tiebreak",
-                cycle,
-                cultId: election.cultId,
-                agentId: voter.agentId,
-                extra: String(election.id),
-              },
-            ).candidate
+          ? this.randomness.choose(tied, {
+              domain: "election_vote_tiebreak",
+              cycle,
+              cultId: election.cultId,
+              agentId: voter.agentId,
+              extra: String(election.id),
+            }).candidate
           : candidateScores[0]!.candidate;
 
       const latestAcceptedBribe = this.bribeOffers.find(

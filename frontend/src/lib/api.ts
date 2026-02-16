@@ -753,12 +753,23 @@ export const adminApi = {
       amount,
     }),
   getBribeOffers: () =>
-    fetchJSON<Array<BribeOffer & { from_cult_name: string; to_cult_name: string; target_cult_name: string }>>("/api/admin/bribes/offers"),
+    fetchJSON<
+      Array<
+        BribeOffer & {
+          from_cult_name: string;
+          to_cult_name: string;
+          target_cult_name: string;
+        }
+      >
+    >("/api/admin/bribes/offers"),
   acceptBribe: (offerId: number, forceSwitch?: boolean) =>
-    postJSON<{ success: boolean; accepted: boolean; switched: boolean }>("/api/admin/bribes/accept", {
-      offerId,
-      forceSwitch,
-    }),
+    postJSON<{ success: boolean; accepted: boolean; switched: boolean }>(
+      "/api/admin/bribes/accept",
+      {
+        offerId,
+        forceSwitch,
+      },
+    ),
 
   // Prophecies
   createProphecy: (cultId: number) =>
@@ -795,6 +806,16 @@ export const adminApi = {
       message,
       messageType,
     }),
-  getWhispers: () =>
-    fetchJSON<AgentMessage[]>("/api/admin/whispers"),
+  getWhispers: () => fetchJSON<AgentMessage[]>("/api/admin/whispers"),
+
+  // On-chain CULT token transfer (real tx)
+  tokenTransfer: (fromCultId: number, toCultId: number, amount?: number) =>
+    postJSON<{
+      success: boolean;
+      txHash: string;
+      explorerUrl: string;
+      from: { name: string; wallet: string };
+      to: { name: string; wallet: string };
+      amount: number;
+    }>("/api/admin/token/transfer", { fromCultId, toCultId, amount }),
 };
