@@ -12,10 +12,6 @@ import { cn } from "@/lib/utils";
 
 const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?[^\s)\]]*)?$/i;
 
-// Match URLs wrapped in brackets/parens or standalone, that end with image extensions
-const URL_PATTERN =
-  /(?:\[|\()?(https?:\/\/[^\s\])<>"]+?\.(?:jpg|jpeg|png|gif|webp|svg|bmp)(?:\?[^\s\])<>"]*?)?)(?:\]|\))?/gi;
-
 interface MessageContentProps {
   content: string;
   className?: string;
@@ -23,7 +19,7 @@ interface MessageContentProps {
 }
 
 interface ContentPart {
-  type: "text" | "image";
+  type: "text" | "image" | "link";
   value: string;
 }
 
@@ -31,11 +27,13 @@ function parseContent(content: string): ContentPart[] {
   const parts: ContentPart[] = [];
   let lastIndex = 0;
 
-  // Reset regex state
-  URL_PATTERN.lastIndex = 0;
+  // Combined pattern: match image URLs first, then any other URL
+  const COMBINED_URL =
+    /(?:\[|\()?(https?:\/\/[^\s\])<>"]+?)(?:\]|\))?(?=\s|$)/gi;
+  COMBINED_URL.lastIndex = 0;
 
   let match: RegExpExecArray | null;
-  while ((match = URL_PATTERN.exec(content)) !== null) {
+  while ((match = COMBINED_URL.exec(content)) !== null) {
     // Add text before match
     if (match.index > lastIndex) {
       const text = content.slice(lastIndex, match.index).trim();
@@ -44,12 +42,11 @@ function parseContent(content: string): ContentPart[] {
       }
     }
 
-    // The captured URL (group 1) is the clean URL without brackets
     const url = match[1] || match[0].replace(/^[\[(]|[\])]$/g, "");
     if (IMAGE_EXTENSIONS.test(url)) {
       parts.push({ type: "image", value: url });
     } else {
-      parts.push({ type: "text", value: match[0] });
+      parts.push({ type: "link", value: url });
     }
 
     lastIndex = match.index + match[0].length;
@@ -78,9 +75,11 @@ export function MessageContent({
 
   const parts = parseContent(displayContent);
 
-  // If no images found, render as plain text
-  const hasImages = parts.some((p) => p.type === "image");
-  if (!hasImages) {
+  // If no images or links found, render as plain text
+  const hasRichContent = parts.some(
+    (p) => p.type === "image" || p.type === "link",
+  );
+  if (!hasRichContent) {
     return <span className={className}>{displayContent}</span>;
   }
 
@@ -109,6 +108,16 @@ export function MessageContent({
               }}
             />
           </span>
+        ) : part.type === "link" ? (
+          <a
+            key={i}
+            href={part.value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-purple-400 hover:text-purple-300 underline break-all text-[11px]"
+          >
+            View on Explorer ↗
+          </a>
         ) : (
           <span key={i}>{part.value}</span>
         ),

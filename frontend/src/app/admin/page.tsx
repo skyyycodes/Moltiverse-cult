@@ -10,7 +10,11 @@ import {
   type Cult,
 } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
-import { CULT_COLORS, CULT_TOKEN_ADDRESS, MONAD_EXPLORER } from "@/lib/constants";
+import {
+  CULT_COLORS,
+  CULT_TOKEN_ADDRESS,
+  MONAD_EXPLORER,
+} from "@/lib/constants";
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
@@ -947,8 +951,8 @@ function BribeOffersPanel({
         result.switched
           ? "accepted + switched"
           : result.txHash
-            ? `accepted — TX: ${result.txHash}`
-            : "accepted",
+          ? `accepted — TX: ${result.txHash}`
+          : "accepted",
       );
       await loadOffers();
     } catch (err: unknown) {

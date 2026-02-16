@@ -65,6 +65,11 @@ export class ContractService {
     return this.provider.getBalance(this.wallet.address);
   }
 
+  /** Get MON balance for any address (or own wallet if omitted). */
+  async getMonBalance(address?: string): Promise<bigint> {
+    return this.provider.getBalance(address || this.wallet.address);
+  }
+
   /**
    * Fund a target wallet from this wallet. Used by the deployer wallet
    * to send MON to each agent's auto-generated wallet.

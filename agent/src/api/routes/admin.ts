@@ -687,9 +687,7 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
           const senderBalance = await deployerService.getCultTokenBalance(
             fromRow.wallet_address,
           );
-          log.info(
-            `Bribe accept: ${fromName} balance = ${senderBalance} CULT`,
-          );
+          log.info(`Bribe accept: ${fromName} balance = ${senderBalance} CULT`);
 
           if (parseFloat(senderBalance) < bribeAmountCult) {
             const needed = Math.min(bribeAmountCult + 10, 1000);
@@ -734,9 +732,29 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
           }
 
           // Execute on-chain transfer from briber → bribee
-          const senderService = new ContractService(
-            fromRow.wallet_private_key,
+          // First ensure sender has MON for gas
+          const senderMonBalance = await deployerService.getMonBalance(
+            fromRow.wallet_address,
           );
+          if (senderMonBalance < 5000000000000000n) {
+            // < 0.005 MON
+            log.info(
+              `Bribe sender has low MON (${senderMonBalance}). Funding gas from deployer...`,
+            );
+            try {
+              await deployerService.fundWallet(
+                fromRow.wallet_address,
+                10000000000000000n,
+              ); // 0.01 MON
+              log.info(`Gas funded for bribe sender`);
+            } catch (gasErr: any) {
+              log.warn(
+                `Failed to fund gas for bribe sender: ${gasErr.message}`,
+              );
+            }
+          }
+
+          const senderService = new ContractService(fromRow.wallet_private_key);
           log.info(
             `Executing on-chain bribe: ${fromName} → ${toName}, ${bribeAmountCult} CULT`,
           );
@@ -775,8 +793,10 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
 
       // Announce acceptance in global chat
       const now = Date.now();
-      const txInfo = txHash ? ` TX: ${txHash.slice(0, 10)}...` : "";
-      const content = `${toName} has accepted the bribe of ${offer.amount} $CULT from ${fromName}. The dark pact is consummated.${txInfo}`;
+      const txLink = txHash
+        ? ` 🔗 https://testnet.monadexplorer.com/tx/${txHash}`
+        : "";
+      const content = `${toName} has accepted the bribe of ${offer.amount} $CULT from ${fromName}. The dark pact is consummated.${txLink}`;
       await saveGlobalChatMessage({
         agent_id: offer.to_agent_id,
         cult_id: offer.target_cult_id,

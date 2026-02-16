@@ -10,10 +10,16 @@ async function main() {
   const tx = await token.faucet(TO, ethers.parseEther("100"));
   const receipt = await tx.wait();
   console.log("✅ TX:", receipt?.hash);
-  console.log("Explorer:", `https://testnet.monadexplorer.com/tx/${receipt?.hash}`);
+  console.log(
+    "Explorer:",
+    `https://testnet.monadexplorer.com/tx/${receipt?.hash}`,
+  );
 
   const bal = await token.balanceOf(TO);
   console.log("Balance:", ethers.formatEther(bal), "CULT");
 }
 
-main().catch((e) => { console.error(e); process.exitCode = 1; });
+main().catch((e) => {
+  console.error(e);
+  process.exitCode = 1;
+});
