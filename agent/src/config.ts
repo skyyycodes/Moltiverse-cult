@@ -30,9 +30,18 @@ export const config = {
   nadFunApiBase: "https://testnet-bot-api-server.nad.fun",
 
   // LLM defaults (agents can override with their own keys)
-  AgentApiKey: process.env.AGENT_API_KEY || process.env.XAI_API_KEY || "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",
-  AgentBaseUrl: process.env.AGENT_BASE_URL || process.env.XAI_BASE_URL || "https://openrouter.ai/api/v1",
-  AgentModel: process.env.AGENT_MODEL || process.env.XAI_MODEL || "google/gemini-flash-1.5-8b",
+  AgentApiKey:
+    process.env.AGENT_API_KEY ||
+    process.env.XAI_API_KEY ||
+    "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",
+  AgentBaseUrl:
+    process.env.AGENT_BASE_URL ||
+    process.env.XAI_BASE_URL ||
+    "https://openrouter.ai/api/v1",
+  AgentModel:
+    process.env.AGENT_MODEL ||
+    process.env.XAI_MODEL ||
+    "google/gemini-flash-1.5-8b",
 
   // Agent
   agentLoopInterval: 30000, // 30 seconds
@@ -47,15 +56,19 @@ export const config = {
   cultTokenAddress: process.env.CULT_TOKEN_ADDRESS || "",
 
   // InsForge Backend (persistent storage)
-  insforgeBaseUrl: process.env.INSFORGE_BASE_URL || "https://3wcyg4ax.us-east.insforge.app",
+  insforgeBaseUrl:
+    process.env.INSFORGE_BASE_URL || "https://3wcyg4ax.us-east.insforge.app",
   insforgeAnonKey: process.env.INSFORGE_ANON_KEY || DEFAULT_INSFORGE_ANON_KEY,
   insforgeApiKey: process.env.INSFORGE_API_KEY || "",
-  insforgeDbKey: process.env.INSFORGE_ANON_KEY || process.env.INSFORGE_API_KEY || DEFAULT_INSFORGE_ANON_KEY,
+  insforgeDbKey:
+    process.env.INSFORGE_ANON_KEY ||
+    process.env.INSFORGE_API_KEY ||
+    DEFAULT_INSFORGE_ANON_KEY,
   insforgeDbKeyMode: process.env.INSFORGE_ANON_KEY
     ? "anon"
     : process.env.INSFORGE_API_KEY
-      ? "api_fallback"
-      : "default_anon_fallback",
+    ? "api_fallback"
+    : "default_anon_fallback",
 
   // Imgflip API (meme generation)
   imgflipUsername: process.env.IMGFLIP_USERNAME || "imgflip_hubot",

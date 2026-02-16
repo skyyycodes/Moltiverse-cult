@@ -10,7 +10,7 @@ import {
   type Cult,
 } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
-import { CULT_COLORS } from "@/lib/constants";
+import { CULT_COLORS, CULT_TOKEN_ADDRESS, MONAD_EXPLORER } from "@/lib/constants";
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
@@ -177,6 +177,77 @@ function StatsPanel({ stats }: { stats: AdminOverview["stats"] }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ── Token Info Panel ─────────────────────────────────────────── */
+
+function TokenInfoPanel() {
+  const addr = CULT_TOKEN_ADDRESS;
+  const short = addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "Not set";
+  const explorerLink = addr ? `${MONAD_EXPLORER}/address/${addr}` : null;
+
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        {/* Token info */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-lg">
+            🪙
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-white">
+              $CULT Token{" "}
+              <span className="text-[10px] text-white/30 font-normal ml-1">
+                Monad Testnet
+              </span>
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <code className="text-[11px] text-white/50 font-mono">
+                {short}
+              </code>
+              {explorerLink && (
+                <a
+                  href={explorerLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-purple-400 hover:text-purple-300 text-[10px] underline"
+                >
+                  Explorer ↗
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Quick links */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {explorerLink && (
+            <a
+              href={explorerLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-lg text-[11px] font-medium bg-purple-500/15 text-purple-300 border border-purple-500/25 hover:bg-purple-500/25 transition-colors"
+            >
+              View Contract
+            </a>
+          )}
+          {explorerLink && (
+            <a
+              href={`${explorerLink}#code`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white/[0.04] text-white/50 border border-white/[0.08] hover:bg-white/[0.08] transition-colors"
+            >
+              Read/Write
+            </a>
+          )}
+          <div className="px-3 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+            Public Faucet: 100 CULT / 24h
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1343,9 +1414,7 @@ function TokenTransferPanel({
           </select>
         </div>
         <div>
-          <label className="text-[10px] text-white/30 block mb-1">
-            Amount
-          </label>
+          <label className="text-[10px] text-white/30 block mb-1">Amount</label>
           <input
             type="number"
             value={amount}
@@ -1774,6 +1843,9 @@ export default function AdminPage() {
         <div className="space-y-6">
           {/* Stats */}
           <StatsPanel stats={data.stats} />
+
+          {/* Token Info */}
+          <TokenInfoPanel />
 
           {/* Two-column layout for main panels */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

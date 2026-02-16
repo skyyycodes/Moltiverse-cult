@@ -2,6 +2,8 @@
 pragma solidity ^0.8.24;
 
 /**
+ * 
+ * 
  * @title FaithStaking
  * @dev Stake MON to demonstrate faith in a cult.
  *      Stakers earn faith points proportional to stake duration.

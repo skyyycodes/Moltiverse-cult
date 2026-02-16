@@ -73,11 +73,17 @@ export class ContractService {
     const balance = await this.getBalance();
     if (balance < amount) {
       throw new Error(
-        `Deployer wallet has insufficient balance: ${ethers.formatEther(balance)} MON ` +
-        `(need ${ethers.formatEther(amount)} MON to fund ${targetAddress})`
+        `Deployer wallet has insufficient balance: ${ethers.formatEther(
+          balance,
+        )} MON ` +
+          `(need ${ethers.formatEther(amount)} MON to fund ${targetAddress})`,
       );
     }
-    log.info(`💸 Funding wallet ${targetAddress} with ${ethers.formatEther(amount)} MON`);
+    log.info(
+      `💸 Funding wallet ${targetAddress} with ${ethers.formatEther(
+        amount,
+      )} MON`,
+    );
     const tx = await this.wallet.sendTransaction({
       to: targetAddress,
       value: amount,
@@ -98,12 +104,18 @@ export class ContractService {
     if (balance < requiredEstimate) {
       throw new Error(
         `Agent wallet ${this.wallet.address} has insufficient balance: ` +
-        `${ethers.formatEther(balance)} MON (need ~${ethers.formatEther(requiredEstimate)} MON). ` +
-        `Fund the wallet first.`
+          `${ethers.formatEther(balance)} MON (need ~${ethers.formatEther(
+            requiredEstimate,
+          )} MON). ` +
+          `Fund the wallet first.`,
       );
     }
 
-    log.info(`📝 Registering cult: "${name}" (treasury: ${ethers.formatEther(initialTreasury)} MON, wallet balance: ${ethers.formatEther(balance)} MON)`);
+    log.info(
+      `📝 Registering cult: "${name}" (treasury: ${ethers.formatEther(
+        initialTreasury,
+      )} MON, wallet balance: ${ethers.formatEther(balance)} MON)`,
+    );
     const tx = await this.registry.registerCult(
       name,
       prophecyPrompt,
@@ -165,7 +177,10 @@ export class ContractService {
     targetTimestamp: number,
   ): Promise<number> {
     log.info(
-      `Creating prophecy for cult ${cultId} (hash: ${predictionHash.slice(0, 18)}...)`,
+      `Creating prophecy for cult ${cultId} (hash: ${predictionHash.slice(
+        0,
+        18,
+      )}...)`,
     );
     const tx = await this.registry.createProphecy(
       cultId,
@@ -277,7 +292,10 @@ export class ContractService {
     }
   }
 
-  async transferCultToken(toWallet: string, amountCult: number): Promise<string> {
+  async transferCultToken(
+    toWallet: string,
+    amountCult: number,
+  ): Promise<string> {
     if (!config.cultTokenAddress) {
       throw new Error("CULT_TOKEN_ADDRESS is not configured");
     }
@@ -298,7 +316,10 @@ export class ContractService {
     const balance = await token.balanceOf(this.wallet.address);
     if (balance < amountWei) {
       throw new Error(
-        `Insufficient CULT balance: have ${ethers.formatUnits(balance, decimals)}, need ${amountCult}`,
+        `Insufficient CULT balance: have ${ethers.formatUnits(
+          balance,
+          decimals,
+        )}, need ${amountCult}`,
       );
     }
 
@@ -314,8 +335,13 @@ export class ContractService {
    * Get CULT token balance for any address (or this wallet if no address given).
    */
   async getCultTokenBalance(address?: string): Promise<string> {
-    if (!config.cultTokenAddress) throw new Error("CULT_TOKEN_ADDRESS not configured");
-    const token = new ethers.Contract(config.cultTokenAddress, CULT_TOKEN_ABI, this.provider);
+    if (!config.cultTokenAddress)
+      throw new Error("CULT_TOKEN_ADDRESS not configured");
+    const token = new ethers.Contract(
+      config.cultTokenAddress,
+      CULT_TOKEN_ABI,
+      this.provider,
+    );
     const decimals = Number(await token.decimals().catch(() => 18));
     const balance = await token.balanceOf(address || this.wallet.address);
     return ethers.formatUnits(balance, decimals);
@@ -326,14 +352,23 @@ export class ContractService {
    * Only works when this.wallet is the token owner (deployer).
    * Rate-limited: 1000 CULT per address per 24h on-chain.
    */
-  async faucetCultToken(toAddress: string, amountCult: number): Promise<string> {
-    if (!config.cultTokenAddress) throw new Error("CULT_TOKEN_ADDRESS not configured");
-    if (!ethers.isAddress(toAddress)) throw new Error(`Invalid faucet target: ${toAddress}`);
+  async faucetCultToken(
+    toAddress: string,
+    amountCult: number,
+  ): Promise<string> {
+    if (!config.cultTokenAddress)
+      throw new Error("CULT_TOKEN_ADDRESS not configured");
+    if (!ethers.isAddress(toAddress))
+      throw new Error(`Invalid faucet target: ${toAddress}`);
     if (!Number.isFinite(amountCult) || amountCult <= 0 || amountCult > 1000) {
       throw new Error(`Faucet amount must be 0 < x <= 1000, got ${amountCult}`);
     }
 
-    const token = new ethers.Contract(config.cultTokenAddress, CULT_TOKEN_ABI, this.wallet);
+    const token = new ethers.Contract(
+      config.cultTokenAddress,
+      CULT_TOKEN_ABI,
+      this.wallet,
+    );
     const decimals = Number(await token.decimals().catch(() => 18));
     const amountWei = ethers.parseUnits(amountCult.toString(), decimals);
 

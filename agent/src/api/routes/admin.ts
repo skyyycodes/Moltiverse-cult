@@ -1064,29 +1064,43 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
       const fromRow = allRows.find((r) => r.cult_id === fromCultId);
       const toRow = allRows.find((r) => r.cult_id === toCultId);
       if (!fromRow || !toRow) {
-        res.status(404).json({ error: "Could not find agent rows for given cultIds" });
+        res
+          .status(404)
+          .json({ error: "Could not find agent rows for given cultIds" });
         return;
       }
       if (!fromRow.wallet_address || !fromRow.wallet_private_key) {
-        res.status(400).json({ error: `Sender agent ${fromRow.name} has no wallet` });
+        res
+          .status(400)
+          .json({ error: `Sender agent ${fromRow.name} has no wallet` });
         return;
       }
       if (!toRow.wallet_address) {
-        res.status(400).json({ error: `Recipient agent ${toRow.name} has no wallet` });
+        res
+          .status(400)
+          .json({ error: `Recipient agent ${toRow.name} has no wallet` });
         return;
       }
 
-      const { ContractService } = await import("../../chain/ContractService.js");
+      const { ContractService } = await import(
+        "../../chain/ContractService.js"
+      );
 
       // Step 1: Fund sender if balance insufficient.
       // Try: faucet (CULTToken.sol) → deployer transfer → fail gracefully
       const deployerService = new ContractService(); // uses PRIVATE_KEY (deployer)
-      const senderBalance = await deployerService.getCultTokenBalance(fromRow.wallet_address);
-      log.info(`Token transfer: ${fromRow.name} balance = ${senderBalance} CULT`);
+      const senderBalance = await deployerService.getCultTokenBalance(
+        fromRow.wallet_address,
+      );
+      log.info(
+        `Token transfer: ${fromRow.name} balance = ${senderBalance} CULT`,
+      );
 
       if (parseFloat(senderBalance) < amountCult) {
         const needed = Math.min(amountCult + 10, 1000);
-        log.info(`Sender has insufficient balance. Funding ${needed} CULT to ${fromRow.name}...`);
+        log.info(
+          `Sender has insufficient balance. Funding ${needed} CULT to ${fromRow.name}...`,
+        );
 
         let funded = false;
         // Try faucet first (only works on CULTToken.sol deployed contracts)
@@ -1098,7 +1112,9 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
           log.info(`Faucet funded: ${faucetTxHash}`);
           funded = true;
         } catch (faucetErr: any) {
-          log.warn(`Faucet unavailable: ${faucetErr.message}. Trying deployer transfer...`);
+          log.warn(
+            `Faucet unavailable: ${faucetErr.message}. Trying deployer transfer...`,
+          );
         }
 
         // Fallback: deployer sends tokens from its own balance
@@ -1130,8 +1146,13 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
 
       // Step 2: Agent-to-agent on-chain transfer
       const senderService = new ContractService(fromRow.wallet_private_key);
-      log.info(`Executing on-chain CULT transfer: ${fromRow.name} → ${toRow.name}, ${amountCult} CULT`);
-      const txHash = await senderService.transferCultToken(toRow.wallet_address, amountCult);
+      log.info(
+        `Executing on-chain CULT transfer: ${fromRow.name} → ${toRow.name}, ${amountCult} CULT`,
+      );
+      const txHash = await senderService.transferCultToken(
+        toRow.wallet_address,
+        amountCult,
+      );
       log.info(`On-chain transfer tx: ${txHash}`);
 
       // Step 3: Record with real tx hash
@@ -1151,7 +1172,10 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
       );
 
       // Broadcast chat message
-      const content = `⚡ ${fromName} sent ${amountCult} $CULT to ${toName} on-chain! TX: ${txHash.slice(0, 10)}...`;
+      const content = `⚡ ${fromName} sent ${amountCult} $CULT to ${toName} on-chain! TX: ${txHash.slice(
+        0,
+        10,
+      )}...`;
       await saveGlobalChatMessage({
         agent_id: fromCultId,
         cult_id: fromCultId,
