@@ -34,7 +34,8 @@ contract CULTToken {
 
     // ── Faucet rate-limit (testnet only) ────────────────────────────
     uint256 public constant FAUCET_COOLDOWN   = 24 hours;
-    uint256 public constant FAUCET_MAX_AMOUNT = 1_000 * 1e18; // 1 000 CULT
+    uint256 public constant FAUCET_MAX_AMOUNT = 1_000 * 1e18; // 1 000 CULT (owner faucet)
+    uint256 public constant PUBLIC_FAUCET_AMOUNT = 100 * 1e18; // 100 CULT (public faucet)
     mapping(address => uint256) public lastFaucetClaim;
 
     // ── Protocol addresses (set after deploy) ───────────────────────
@@ -154,6 +155,25 @@ contract CULTToken {
 
         emit Transfer(address(0), to, amount);
         emit FaucetClaimed(to, amount);
+    }
+
+    /**
+     * @notice Public faucet — anyone can claim 100 CULT once per 24 h.
+     *         Testnet only. Remove for mainnet.
+     */
+    function claimFaucet() external {
+        address to = msg.sender;
+        require(
+            block.timestamp >= lastFaucetClaim[to] + FAUCET_COOLDOWN,
+            "CULTToken: faucet cooldown active (24h)"
+        );
+
+        lastFaucetClaim[to] = block.timestamp;
+        totalSupply += PUBLIC_FAUCET_AMOUNT;
+        balanceOf[to] += PUBLIC_FAUCET_AMOUNT;
+
+        emit Transfer(address(0), to, PUBLIC_FAUCET_AMOUNT);
+        emit FaucetClaimed(to, PUBLIC_FAUCET_AMOUNT);
     }
 
     // ── Admin ───────────────────────────────────────────────────────
