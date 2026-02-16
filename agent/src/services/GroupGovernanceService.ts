@@ -205,6 +205,21 @@ export class GroupGovernanceService {
     this.updateBribeStatusLocal(offerId, status);
   }
 
+  /** Update the on-chain tx hash for a bribe offer in the in-memory cache. */
+  setBribeTxHash(
+    offerId: number,
+    txHash: string | null,
+    transferStatus: "confirmed" | "failed" | null,
+  ): void {
+    const idx = this.bribeOffers.findIndex((o) => o.id === offerId);
+    if (idx < 0) return;
+    this.bribeOffers[idx] = {
+      ...this.bribeOffers[idx],
+      transfer_tx_hash: txHash,
+      transfer_status: transferStatus,
+    };
+  }
+
   async ensureMembership(
     agentId: number,
     cultId: number,
@@ -327,6 +342,8 @@ export class GroupGovernanceService {
       accepted_at: null,
       expires_at: expiresAt,
       created_at: createdAt,
+      transfer_tx_hash: null,
+      transfer_status: null,
     };
 
     const insertedId = await saveBribeOffer(row);
@@ -356,6 +373,8 @@ export class GroupGovernanceService {
       acceptance_probability: acceptanceProbability,
       accepted_at: acceptedAt,
       expires_at: expiresAt,
+      transfer_tx_hash: null,
+      transfer_status: null,
       createdAt,
     };
     this.upsertBribeOffer(offer);

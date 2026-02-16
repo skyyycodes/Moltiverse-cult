@@ -122,6 +122,8 @@ export interface BribeOfferRow {
   accepted_at: number | null;
   expires_at: number | null;
   created_at: number;
+  transfer_tx_hash: string | null;
+  transfer_status: "confirmed" | "failed" | null;
 }
 
 export interface LeadershipPayoutRow {
@@ -1483,7 +1485,7 @@ export async function saveBribeOffer(
 export async function updateBribeOffer(
   offerId: number,
   updates: Partial<
-    Pick<BribeOfferRow, "status" | "accepted_at" | "expires_at">
+    Pick<BribeOfferRow, "status" | "accepted_at" | "expires_at" | "transfer_tx_hash" | "transfer_status">
   >,
 ): Promise<void> {
   const db = getInsForgeClient().database;

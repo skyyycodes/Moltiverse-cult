@@ -763,13 +763,17 @@ export const adminApi = {
       >
     >("/api/admin/bribes/offers"),
   acceptBribe: (offerId: number, forceSwitch?: boolean) =>
-    postJSON<{ success: boolean; accepted: boolean; switched: boolean }>(
-      "/api/admin/bribes/accept",
-      {
-        offerId,
-        forceSwitch,
-      },
-    ),
+    postJSON<{
+      success: boolean;
+      accepted: boolean;
+      switched: boolean;
+      txHash?: string | null;
+      explorerUrl?: string | null;
+      transferStatus?: "confirmed" | "failed";
+    }>("/api/admin/bribes/accept", {
+      offerId,
+      forceSwitch,
+    }),
 
   // Prophecies
   createProphecy: (cultId: number) =>

@@ -573,6 +573,8 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
         accepted_at: null,
         expires_at: null,
         created_at: now,
+        transfer_tx_hash: null,
+        transfer_status: null,
       };
       const offerId = await saveBribeOffer(offerRow);
 
@@ -615,6 +617,8 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
           from_cult_name: fromCult?.name || `Cult ${offer.from_agent_id}`,
           to_cult_name: toCult?.name || `Cult ${offer.to_agent_id}`,
           target_cult_name: targetCult?.name || `Cult ${offer.target_cult_id}`,
+          transferTxHash: offer.transfer_tx_hash || null,
+          transferStatus: offer.transfer_status || null,
         };
       });
       res.json(enriched);
@@ -647,16 +651,6 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
         "../../services/InsForgeService.js"
       );
 
-      // Update status to accepted
-      const acceptedAt = Date.now();
-      await updateBribeOffer(offerId, {
-        status: "accepted",
-        accepted_at: acceptedAt,
-      });
-
-      // Update local cache
-      orchestrator.groupGovernanceService.setBribeStatus(offerId, "accepted");
-
       const fromCult = stateStore.cults.find(
         (c) => c.id === offer.from_agent_id,
       );
@@ -668,9 +662,121 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
       const toName = toCult?.name || `Cult ${offer.to_agent_id}`;
       const targetName = targetCult?.name || `Cult ${offer.target_cult_id}`;
 
+      // ─── On-chain CULT token transfer ────────────────────────
+      let txHash: string | null = null;
+      let transferStatus: "confirmed" | "failed" = "failed";
+      const bribeAmountCult = Math.max(0.001, parseFloat(offer.amount) || 1);
+
+      try {
+        const { ContractService } = await import(
+          "../../chain/ContractService.js"
+        );
+
+        // Resolve agent wallet rows
+        const allRows = orchestrator.getAllAgentRows();
+        const fromRow = allRows.find((r) => r.cult_id === offer.from_agent_id);
+        const toRow = allRows.find((r) => r.cult_id === offer.to_agent_id);
+
+        if (
+          fromRow?.wallet_address &&
+          fromRow?.wallet_private_key &&
+          toRow?.wallet_address
+        ) {
+          // Fund sender if balance insufficient
+          const deployerService = new ContractService();
+          const senderBalance = await deployerService.getCultTokenBalance(
+            fromRow.wallet_address,
+          );
+          log.info(
+            `Bribe accept: ${fromName} balance = ${senderBalance} CULT`,
+          );
+
+          if (parseFloat(senderBalance) < bribeAmountCult) {
+            const needed = Math.min(bribeAmountCult + 10, 1000);
+            log.info(
+              `Bribe sender has insufficient balance. Funding ${needed} CULT to ${fromName}...`,
+            );
+
+            let funded = false;
+            // Try faucet
+            try {
+              const faucetTx = await deployerService.faucetCultToken(
+                fromRow.wallet_address,
+                needed,
+              );
+              log.info(`Faucet funded for bribe: ${faucetTx}`);
+              funded = true;
+            } catch (faucetErr: any) {
+              log.warn(
+                `Faucet unavailable for bribe: ${faucetErr.message}. Trying deployer...`,
+              );
+            }
+
+            // Fallback: deployer transfer
+            if (!funded) {
+              try {
+                const deployerBalance =
+                  await deployerService.getCultTokenBalance();
+                if (parseFloat(deployerBalance) >= bribeAmountCult) {
+                  const deployerTx = await deployerService.transferCultToken(
+                    fromRow.wallet_address,
+                    bribeAmountCult,
+                  );
+                  log.info(`Deployer funded bribe sender: ${deployerTx}`);
+                  funded = true;
+                }
+              } catch (deployerErr: any) {
+                log.warn(
+                  `Deployer transfer for bribe failed: ${deployerErr.message}`,
+                );
+              }
+            }
+          }
+
+          // Execute on-chain transfer from briber → bribee
+          const senderService = new ContractService(
+            fromRow.wallet_private_key,
+          );
+          log.info(
+            `Executing on-chain bribe: ${fromName} → ${toName}, ${bribeAmountCult} CULT`,
+          );
+          txHash = await senderService.transferCultToken(
+            toRow.wallet_address,
+            bribeAmountCult,
+          );
+          transferStatus = "confirmed";
+          log.info(`On-chain bribe tx: ${txHash}`);
+        } else {
+          log.warn(
+            `Bribe on-chain transfer skipped: missing wallet info for agents`,
+          );
+        }
+      } catch (txErr: any) {
+        log.error(`Bribe on-chain transfer failed: ${txErr.message}`);
+        transferStatus = "failed";
+      }
+
+      // Update status to accepted + store tx hash
+      const acceptedAt = Date.now();
+      await updateBribeOffer(offerId, {
+        status: "accepted",
+        accepted_at: acceptedAt,
+        transfer_tx_hash: txHash,
+        transfer_status: transferStatus,
+      });
+
+      // Update local cache
+      orchestrator.groupGovernanceService.setBribeStatus(offerId, "accepted");
+      orchestrator.groupGovernanceService.setBribeTxHash(
+        offerId,
+        txHash,
+        transferStatus,
+      );
+
       // Announce acceptance in global chat
       const now = Date.now();
-      const content = `${toName} has accepted the bribe of ${offer.amount} $CULT from ${fromName}. The dark pact is consummated.`;
+      const txInfo = txHash ? ` TX: ${txHash.slice(0, 10)}...` : "";
+      const content = `${toName} has accepted the bribe of ${offer.amount} $CULT from ${fromName}. The dark pact is consummated.${txInfo}`;
       await saveGlobalChatMessage({
         agent_id: offer.to_agent_id,
         cult_id: offer.target_cult_id,
@@ -750,13 +856,20 @@ export function adminRoutes(orchestrator: AgentOrchestrator): Router {
         }
       }
 
+      const explorerUrl = txHash
+        ? `https://testnet.monadexplorer.com/tx/${txHash}`
+        : null;
+
       res.json({
         success: true,
         accepted: true,
         switched,
+        txHash,
+        explorerUrl,
+        transferStatus,
         message: `Bribe ${offerId} accepted${
           switched ? " and cult switch executed" : ""
-        }`,
+        }${txHash ? ` — TX: ${txHash}` : ""}`,
       });
     } catch (error: any) {
       log.error(`Accept bribe failed: ${error.message}`);

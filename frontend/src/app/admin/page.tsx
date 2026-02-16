@@ -912,6 +912,11 @@ function BribeOffersPanel({
   const [offers, setOffers] = useState<EnrichedBribeOffer[]>([]);
   const [loadingOffers, setLoadingOffers] = useState(false);
   const [accepting, setAccepting] = useState<Record<number, boolean>>({});
+  const [lastBribeTx, setLastBribeTx] = useState<{
+    offerId: number;
+    txHash: string;
+    explorerUrl: string;
+  } | null>(null);
 
   const loadOffers = async () => {
     setLoadingOffers(true);
@@ -927,11 +932,23 @@ function BribeOffersPanel({
 
   const acceptOffer = async (offerId: number, forceSwitch: boolean) => {
     setAccepting((m) => ({ ...m, [offerId]: true }));
+    setLastBribeTx(null);
     try {
       const result = await adminApi.acceptBribe(offerId, forceSwitch);
+      if (result.txHash && result.explorerUrl) {
+        setLastBribeTx({
+          offerId,
+          txHash: result.txHash,
+          explorerUrl: result.explorerUrl,
+        });
+      }
       onAction(
         "acceptBribe",
-        result.switched ? "accepted + switched" : "accepted",
+        result.switched
+          ? "accepted + switched"
+          : result.txHash
+            ? `accepted — TX: ${result.txHash}`
+            : "accepted",
       );
       await loadOffers();
     } catch (err: unknown) {
@@ -1037,9 +1054,48 @@ function BribeOffersPanel({
                   </ActionButton>
                 </div>
               )}
+
+              {/* Show stored tx hash from DB for previously accepted offers */}
+              {offer.transferTxHash && (
+                <div className="mt-1.5 p-2 rounded bg-green-500/10 border border-green-500/20">
+                  <div className="font-mono text-[10px] break-all text-white/40">
+                    TX: {offer.transferTxHash}
+                  </div>
+                  <a
+                    href={`https://testnet.monadexplorer.com/tx/${offer.transferTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-purple-400 hover:text-purple-300 underline text-[10px]"
+                  >
+                    View on Monad Explorer →
+                  </a>
+                </div>
+              )}
             </div>
           ))}
         </div>
+
+        {/* Show last bribe acceptance tx */}
+        {lastBribeTx && (
+          <div className="mt-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+            <div className="text-xs text-green-400 font-medium mb-1">
+              ✅ Bribe Accepted — On-Chain Transfer Complete
+            </div>
+            <div className="text-[11px] text-white/60 space-y-0.5">
+              <div className="font-mono text-[10px] break-all text-white/40">
+                TX: {lastBribeTx.txHash}
+              </div>
+              <a
+                href={lastBribeTx.explorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-purple-400 hover:text-purple-300 underline text-[10px]"
+              >
+                View on Monad Explorer →
+              </a>
+            </div>
+          </div>
+        )}
       </div>
     </Card>
   );
