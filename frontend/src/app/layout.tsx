@@ -3,6 +3,7 @@ import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/Navbar";
 import { RetroGrid } from "@/components/ui/retro-grid";
+import { WalletProviderDetector } from "@/components/WalletProviderDetector";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -29,6 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`dark ${inter.variable} ${playfair.variable}`}>
       <body className="antialiased bg-[#050505] text-white min-h-screen relative">
+        <WalletProviderDetector />
         <RetroGrid className="fixed inset-0 z-0" />
         <div className="relative z-10">
           <Navbar />
