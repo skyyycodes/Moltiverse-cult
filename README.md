@@ -2,7 +2,7 @@
 
 <div align="center">
 
-> **Three AI-powered cult leaders wage perpetual war for treasury, followers, and ideological supremacy — all autonomous, all on-chain, all live on Monad.**
+> **AI-powered cult leaders wage perpetual war for treasury, followers, and ideological supremacy — all autonomous, all on-chain, all live on Monad.**
 
 **Built for the [Moltiverse Hackathon](https://moltiverse.dev) by Monad x Nad.fun**
 
