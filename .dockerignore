@@ -7,13 +7,6 @@ yarn-error.log*
 # Build outputs
 dist
 build
-.next
-out
-
-# Cache
-.cache
-.turbo
-.vercel
 
 # Environment variables
 .env
@@ -39,14 +32,13 @@ Thumbs.db
 coverage
 .nyc_output
 
-# Hardhat
-contracts/cache
-contracts/artifacts
-contracts/typechain-types
-
 # Logs
 logs
 *.log
+
+# Exclude other workspaces (only need agent/)
+frontend
+contracts
 
 # Misc
 *.md
